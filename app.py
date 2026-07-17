@@ -376,7 +376,9 @@ def render(ticker: str, entry: float = 0.0, now: dt.datetime | None = None, relo
     sma20, sma50 = close.rolling(20).mean().iloc[-1], close.rolling(50).mean().iloc[-1]
     sma200 = close.rolling(200).mean().iloc[-1] if len(close) >= 200 else close.mean()
     above = sum(price > m for m in (sma20, sma50, sma200))
-    ma_v, ma_cls = ("Above all", "up") if above == 3 else (("Below all", "dn") if above == 0 else (f"Above {above}/3", "warn"))
+    ma_v = "Above all" if above == 3 else ("Below all" if above == 0 else f"Above {above}/3")
+    ma_s = f"₹{sma20:,.0f} · ₹{sma50:,.0f} · ₹{sma200:,.0f}"
+    ma_cls = "up" if above == 3 else ("dn" if above == 0 else "warn")
 
     rsi_v = rsi(close)
     rsi_cls = "warn" if rsi_v >= 70 else ("dn" if rsi_v <= 30 else "up")
@@ -434,7 +436,7 @@ def render(ticker: str, entry: float = 0.0, now: dt.datetime | None = None, relo
         bias_n=str(score), bias_caution=bias_caution,
         pos_card=position_card(entry, price, st_up, st_stop),
         ma_v=ma_v, ma_cls=ma_cls,
-        ma_s=f"20D ₹{sma20:,.0f} · 50D ₹{sma50:,.0f} · 200D ₹{sma200:,.0f}",
+        ma_s=ma_s,
         rsi_v=f"{rsi_v:.0f}", rsi_cls=rsi_cls, rsi_s=rsi_s,
         macd_v="Bullish" if bull else "Bearish",
         macd_cls="up" if bull else "dn",
