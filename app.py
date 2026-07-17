@@ -45,12 +45,16 @@ def fetch_daily(ticker: str) -> pd.DataFrame:
     return df[["Open", "High", "Low", "Close", "Volume"]].dropna()
 
 @st.cache_data(ttl=55, show_spinner=False)
-def fetch_live_price(ticker: str) -> float | None:
+def fetch_live_price(ticker: str) -> tuple[float, float, float] | None:
     try:
         session = requests.Session(impersonate="chrome")
         intra = yf.Ticker(ticker, session=session).history(period="1d", interval="1m")
         if not intra.empty:
-            return float(intra["Close"].iloc[-1])
+            return (
+                float(intra["Close"].iloc[-1]),
+                float(intra["Low"].min()),
+                float(intra["High"].max())
+            )
     except Exception:
         pass
     return None
@@ -131,24 +135,68 @@ def pct_return(close: pd.Series, sessions: int) -> float | None:
 
 def compose_read(price: float, pp: float, sma200: float, st_up: bool,
                  rsi_v: float, vol_ratio: float) -> str:
+    # Trend
     if price > sma200 and st_up:
-        trend = "Uptrend intact"
+        trend_lbl = "Uptrend"
+        trend_cls = "up"
+        trend_icon = "📈"
     elif price < sma200 and not st_up:
-        trend = "Downtrend in force"
+        trend_lbl = "Downtrend"
+        trend_cls = "dn"
+        trend_icon = "📉"
     else:
-        trend = "Mixed trend"
-    clauses = []
-    if rsi_v >= 70:
-        clauses.append(f"stretched (RSI {rsi_v:.0f})")
-    elif rsi_v <= 30:
-        clauses.append(f"washed out (RSI {rsi_v:.0f})")
+        trend_lbl = "Mixed"
+        trend_cls = "warn"
+        trend_icon = "🔀"
+
+    # Volume
     if vol_ratio < 0.8:
-        clauses.append("volume fading")
+        vol_lbl = f"Fading ({vol_ratio:.1f}x)"
+        vol_cls = "dn"
     elif vol_ratio > 1.5:
-        clauses.append("volume expanding")
-    mid = " — " + ", ".join(clauses) if clauses else ""
-    side = "below" if price > pp else "above"
-    return f"{trend}{mid}. Bias flips {side} ₹{pp:,.2f}."
+        vol_lbl = f"Expanding ({vol_ratio:.1f}x)"
+        vol_cls = "up"
+    else:
+        vol_lbl = f"Normal ({vol_ratio:.1f}x)"
+        vol_cls = "warn"
+
+    # Pivot Support/Resistance
+    if price > pp:
+        piv_lbl = f"Support ₹{pp:,.2f}"
+        piv_cls = "up"
+        piv_icon = "🛡️"
+    else:
+        piv_lbl = f"Resistance ₹{pp:,.2f}"
+        piv_cls = "dn"
+        piv_icon = "🚧"
+
+    # RSI condition
+    rsi_extra = ""
+    if rsi_v >= 70:
+        rsi_extra = f' <span class="sum-badge dn">RSI Extended ({rsi_v:.0f})</span>'
+    elif rsi_v <= 30:
+        rsi_extra = f' <span class="sum-badge up">RSI Oversold ({rsi_v:.0f})</span>'
+
+    html = f"""
+    <div class="summary-line">
+        <div class="sum-item">
+            <span class="sum-icon">{trend_icon}</span>
+            <span class="sum-lbl">Trend:</span>
+            <span class="sum-val {trend_cls}">{trend_lbl}</span>
+        </div>
+        <div class="sum-item">
+            <span class="sum-icon">📊</span>
+            <span class="sum-lbl">Vol:</span>
+            <span class="sum-val {vol_cls}">{vol_lbl}</span>
+        </div>
+        <div class="sum-item">
+            <span class="sum-icon">{piv_icon}</span>
+            <span class="sum-lbl">Pivot:</span>
+            <span class="sum-val {piv_cls}">{piv_lbl}</span>{rsi_extra}
+        </div>
+    </div>
+    """
+    return html
 
 # ---------------------------------------------------------------- verdict
 
@@ -175,14 +223,25 @@ def position_card(entry: float, price: float, st_up: bool, st_stop: float) -> st
                 'and your trend stop</div></div>')
     pnl = (price / entry - 1) * 100
     pnl_color = "var(--sup)" if pnl >= 0 else "var(--res)"
+    pnl_val = price - entry
+    pnl_val_str = f"+₹{pnl_val:,.2f}" if pnl_val >= 0 else f"-₹{abs(pnl_val):,.2f}"
+    
     if st_up:
-        stat, stat_cls = f"Trend intact · breaks below ₹{fmt(st_stop)}", "up"
+        pct_to_stop = (price - st_stop) / st_stop * 100 if st_stop else 0.0
+        if pct_to_stop <= 1.5:
+            stat = f"⚠️ APPROACHING STOP · breaks below ₹{fmt(st_stop)} ({pct_to_stop:.1f}%)"
+            stat_cls = "warn-flash"
+        else:
+            stat = f"Trend intact · breaks below ₹{fmt(st_stop)}"
+            stat_cls = "up"
     else:
-        stat, stat_cls = f"Trend broken · recovery above ₹{fmt(st_stop)}", "dn"
+        stat = f"Trend broken · recovery above ₹{fmt(st_stop)}"
+        stat_cls = "dn"
+        
     return (f'<div class="vcard"><div class="k">Your position</div>'
-            f'<div class="big mono" style="color:{pnl_color}">{pnl:+.1f}%</div>'
-            f'<div class="sub2">entry ₹{fmt(entry)} · now ₹{fmt(price)}</div>'
-            f'<div class="sub2 {stat_cls}">{stat}</div></div>')
+            f'<div class="big mono" style="color:{pnl_color}">{pnl:+.1f}% <span style="font-size:12.5px;font-weight:600;margin-left:4px">({pnl_val_str}/sh)</span></div>'
+            f'<div class="sub2 {stat_cls}">{stat}</div>'
+            f'<div class="sub2" style="font-size:11px;color:var(--dim)">entry ₹{fmt(entry)} · now ₹{fmt(price)}</div></div>')
 
 # ---------------------------------------------------------------- html render
 
@@ -264,6 +323,30 @@ padding:12px 16px;margin-bottom:10px;display:flex;align-items:center;justify-con
 .rc .v{font-size:16px;font-weight:800;color:var(--text)}
 .up{color:var(--sup)}.dn{color:var(--res)}.warn{color:var(--pp)}
 .read{margin-top:16px;text-align:center;color:#C9D4E8;font-size:13.5px;line-height:1.6}
+.summary-line{margin-top:18px;border-top:1px solid var(--line);padding-top:14px;display:flex;align-items:center;justify-content:center;gap:16px;flex-wrap:wrap}
+.sum-item{display:flex;align-items:center;font-size:12px;color:#C9D4E8;gap:6px}
+.sum-icon{font-size:13px}
+.sum-lbl{color:var(--dim);font-weight:600;text-transform:uppercase;font-size:10px;letter-spacing:.05em}
+.sum-val{font-weight:800;font-family:'IBM Plex Mono',monospace}
+.sum-val.up{color:var(--sup)}
+.sum-val.dn{color:var(--res)}
+.sum-val.warn{color:var(--pp)}
+.sum-badge{font-size:9.5px;font-weight:800;border-radius:4px;padding:1px 5px;text-transform:uppercase;margin-left:6px}
+.sum-badge.up{background:rgba(46,230,200,.08);color:var(--sup);border:1px solid rgba(46,230,200,.2)}
+.sum-badge.dn{background:rgba(255,107,107,.08);color:var(--res);border:1px solid rgba(255,107,107,.2)}
+.day-range-box{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:10px;font-size:11px;color:var(--muted)}
+.day-range-box .lbl{font-family:'IBM Plex Mono',monospace;font-weight:500}
+.day-range-box .bar-bg{position:relative;width:140px;height:5px;background:#1E2C48;border-radius:99px;box-shadow:inset 0 1px 2px rgba(0,0,0,.3)}
+.day-range-box .bar-dot{position:absolute;top:50%;transform:translate(-50%,-50%);width:9px;height:9px;background:var(--price);border-radius:50%;box-shadow:0 0 8px var(--price)}
+@keyframes pulse-warn {
+  0% { color: #FFC53D; text-shadow: 0 0 4px rgba(255, 197, 61, 0.2); }
+  50% { color: #FF6B6B; text-shadow: 0 0 10px rgba(255, 107, 107, 0.6); }
+  100% { color: #FFC53D; text-shadow: 0 0 4px rgba(255, 197, 61, 0.2); }
+}
+.warn-flash {
+  animation: pulse-warn 1.5s infinite !important;
+  font-weight: 800 !important;
+}
 footer{margin-top:22px;color:var(--dim);font-size:11px;text-align:center}
 @media(max-width:480px){
   .wrap{padding:10px 8px 20px}
@@ -279,7 +362,9 @@ footer{margin-top:22px;color:var(--dim);font-size:11px;text-align:center}
 <div class="hero"><h1>$name</h1>
 <div class="sub mono">Prev: H $ph · L $pl · C $pc</div>
 <div class="px mono">₹$price</div>
-<div class="chg mono">$chg_arrow $chg_abs ($chg_pct%)</div></div>
+<div class="chg mono">$chg_arrow $chg_abs ($chg_pct%)</div>
+$day_range_html
+</div>
 <div class="spectrum">
 <div class="band"></div>
 <div class="tick t-s2"><span class="lab">S2</span><span class="val mono">$s2</span></div>
@@ -294,7 +379,7 @@ footer{margin-top:22px;color:var(--dim);font-size:11px;text-align:center}
 <div class="verdict">
 <div class="vcard"><div class="k">Technical bias</div>
 <div class="big $bias_cls">$bias_label</div>
-<div class="sub2">$bias_n/6 signals bullish$bias_caution</div></div>
+<div class="sub2" title="$bias_tooltip" style="cursor:help">$bias_n/6 signals bullish$bias_caution <span style="font-size:10.5px;color:var(--dim)">ⓘ</span></div></div>
 $pos_card
 </div>
 <div class="grid">
@@ -346,14 +431,15 @@ transition:all 0.2s ease;margin-right:8px;display:flex;align-items:center;gap:4p
 </div>
 </div></body></html>""")
 
-def render_error(ticker: str, error_msg: str, entry: float = 0.0) -> None:
+def render_error(ticker: str, error_msg: str, entry: float = 0.0, favorites_str: str = "") -> None:
+    favs_qp = f"&favorites={favorites_str}" if favorites_str else ""
     html = HTML_ERROR.safe_substitute(
         error_msg=error_msg,
-        reload_url=f"?ticker={ticker}&entry={entry}&reload=1"
+        reload_url=f"?ticker={ticker}&entry={entry}{favs_qp}&reload=1"
     )
     st.iframe(html, height=350)
 
-def render(ticker: str, entry: float = 0.0, now: dt.datetime | None = None, reload_cls: str = "") -> None:
+def render(ticker: str, entry: float = 0.0, now: dt.datetime | None = None, reload_cls: str = "", favorites_str: str = "") -> None:
     now = now or dt.datetime.now(IST)
     is_open, mkt_label = market_status(now)
 
@@ -368,7 +454,26 @@ def render(ticker: str, entry: float = 0.0, now: dt.datetime | None = None, relo
     piv = pivots(ph, pl, pc)
 
     live = fetch_live_price(ticker) if is_open else None
-    price = live if live is not None else pc
+    if live is not None:
+        price, dl_val, dh_val = live
+    else:
+        price = pc
+        dl_val, dh_val = pl, ph
+
+    day_span = dh_val - dl_val
+    px_pct_day = (price - dl_val) / day_span * 100 if day_span > 0 else 50.0
+    px_pct_day = max(2.0, min(98.0, px_pct_day))
+
+    day_range_html = f"""
+    <div class="day-range-box">
+      <span class="lbl">L {fmt(dl_val)}</span>
+      <div class="bar-bg">
+        <div class="bar-dot" style="left: {px_pct_day:.1f}%"></div>
+      </div>
+      <span class="lbl">H {fmt(dh_val)}</span>
+    </div>
+    """
+
     chg = price - pc
     chg_pct = chg / pc * 100 if pc else 0.0
 
@@ -413,11 +518,29 @@ def render(ticker: str, entry: float = 0.0, now: dt.datetime | None = None, relo
     else:
         bias_caution = ""
 
+    sig_sma20 = price > float(sma20)
+    sig_sma50 = price > float(sma50)
+    sig_sma200 = price > float(sma200)
+    sig_st = st_up
+    sig_macd = bull
+    sig_pivot = price > piv["PP"]
+
+    tooltip_lines = [
+        "Technical Bias Breakdown:",
+        f"{'🟢' if sig_sma20 else '🔴'} Price > 20D MA (₹{sma20:,.0f})",
+        f"{'🟢' if sig_sma50 else '🔴'} Price > 50D MA (₹{sma50:,.0f})",
+        f"{'🟢' if sig_sma200 else '🔴'} Price > 200D MA (₹{sma200:,.0f})",
+        f"{'🟢' if sig_st else '🔴'} Supertrend: Buy",
+        f"{'🟢' if sig_macd else '🔴'} MACD: Bullish",
+        f"{'🟢' if sig_pivot else '🔴'} Price > Pivot (₹{piv['PP']:,.2f})"
+    ]
+    bias_tooltip = "\n".join(tooltip_lines)
+
     html = HTML.safe_substitute(
         name=ticker.replace(".NS", "") + " · NSE",
         mkt_label=mkt_label,
         reload_cls=reload_cls,
-        reload_url=f"?ticker={ticker}&entry={entry}&reload=1",
+        reload_url=f"?ticker={ticker}&entry={entry}&favorites={favorites_str}&reload=1",
         dot_color="var(--sup)" if is_open else "var(--dim)",
         dot_anim="animation:pulse 2s infinite" if is_open else "",
         ph=fmt(ph), pl=fmt(pl), pc=fmt(pc),
@@ -434,6 +557,8 @@ def render(ticker: str, entry: float = 0.0, now: dt.datetime | None = None, relo
         rng_pct=f"{rng_pct:.0f}",
         bias_label=bias_label, bias_cls=bias_cls,
         bias_n=str(score), bias_caution=bias_caution,
+        bias_tooltip=bias_tooltip,
+        day_range_html=day_range_html,
         pos_card=position_card(entry, price, st_up, st_stop),
         ma_v=ma_v, ma_cls=ma_cls,
         ma_s=ma_s,
@@ -551,6 +676,27 @@ st.markdown("""<style>
     width: 100% !important;
     border: none !important;
   }
+  
+  /* Style the buttons inside columns to look like premium pills */
+  div[data-testid="stColumn"] button, div[data-testid="column"] button {
+    background-color: rgba(255, 255, 255, 0.03) !important;
+    color: #7E8DA8 !important;
+    border: 1px solid #1E2C48 !important;
+    border-radius: 99px !important;
+    padding: 2px 10px !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    font-family: 'IBM Plex Mono', monospace !important;
+    transition: all 0.2s ease !important;
+    height: auto !important;
+    line-height: 1.2 !important;
+    min-height: 24px !important;
+  }
+  div[data-testid="stColumn"] button:hover, div[data-testid="column"] button:hover {
+    color: #6FA4FF !important;
+    border-color: #6FA4FF !important;
+    background-color: rgba(111, 164, 255, 0.05) !important;
+  }
 </style>""", unsafe_allow_html=True)
 
 default_ticker = st.query_params.get("ticker", "BHAGYANGR.NS")
@@ -572,21 +718,49 @@ with c2:
 if raw != default_ticker or entry != default_entry:
     st.query_params["ticker"] = raw
     st.query_params["entry"] = str(entry)
+
+# Quick Access Pills
+favs_str = st.query_params.get("favorites", "BHAGYANGR,RELIANCE,TCS,INFY,TATASTEEL")
+favorites = [f.strip().upper() for f in favs_str.split(",") if f.strip()]
+
+col_widths = [1.2] + [1] * len(favorites) + [0.6]
+cols_fav = st.columns(col_widths, gap="small")
+with cols_fav[0]:
+    st.markdown("<div style='color:#7E8DA8;font-size:11px;font-weight:700;margin-top:6px;text-transform:uppercase;letter-spacing:0.05em'>Quick list:</div>", unsafe_allow_html=True)
+for idx, fav in enumerate(favorites):
+    with cols_fav[idx + 1]:
+        if st.button(fav, key=f"fav_{fav}", use_container_width=True):
+            st.query_params["ticker"] = fav + ".NS"
+            st.rerun()
+with cols_fav[-1]:
+    show_edit = st.session_state.get("show_edit_favs", False)
+    if st.button("✏️", key="toggle_edit_favs", help="Edit favorite stock list"):
+        st.session_state["show_edit_favs"] = not show_edit
+        st.rerun()
+
+if st.session_state.get("show_edit_favs", False):
+    new_favs = st.text_input("Edit favorites (comma-separated, e.g. TCS, RELIANCE, INFY)", 
+                             value=favs_str, 
+                             help="Type your symbols, then press Enter to save to your Quick list")
+    if new_favs != favs_str:
+        st.query_params["favorites"] = new_favs
+        st.rerun()
 ticker = raw.strip().upper()
 if ticker and "." not in ticker:
     ticker += ".NS"
 
 @st.fragment(run_every="60s")
 def dashboard() -> None:
+    favs_str = st.query_params.get("favorites", "BHAGYANGR,RELIANCE,TCS,INFY,TATASTEEL")
     try:
-        render(ticker, entry, reload_cls=reload_status)
+        render(ticker, entry, reload_cls=reload_status, favorites_str=favs_str)
     except ValueError as e:
         st.error(str(e))
     except Exception as e:
         import traceback
         traceback.print_exc()
         st.session_state["reload_status"] = "failed"
-        render_error(ticker, str(e), entry=entry)
+        render_error(ticker, str(e), entry=entry, favorites_str=favs_str)
 
 if ticker:
     dashboard()
