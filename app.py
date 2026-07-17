@@ -465,7 +465,14 @@ if st.query_params.get("reload") == "1":
     for k, v in params.items():
         st.query_params[k] = v
     st.session_state["reload_status"] = "success"
+    st.session_state["initialized"] = True
     st.rerun()
+
+# Clear cache on new browser tab session load
+if not st.session_state.get("initialized"):
+    fetch_live_price.clear()
+    fetch_daily.clear()
+    st.session_state["initialized"] = True
 
 reload_status = st.session_state.get("reload_status", "")
 if "reload_status" in st.session_state:
