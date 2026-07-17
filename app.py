@@ -275,7 +275,7 @@ footer{margin-top:22px;color:var(--dim);font-size:11px;text-align:center}
 }
 </style></head><body><div class="wrap">
 <div class="top"><div class="brand">Pivot<em>Desk</em></div>
-<div class="mkt"><a href="?reload=1" target="_parent" class="reload-lnk $reload_cls">🔄 Reload</a><span class="dot"></span><span class="mono">$mkt_label</span></div></div>
+<div class="mkt"><a href="$reload_url" target="_parent" class="reload-lnk $reload_cls">🔄 Reload</a><span class="dot"></span><span class="mono">$mkt_label</span></div></div>
 <div class="hero"><h1>$name</h1>
 <div class="sub mono">Prev: H $ph · L $pl · C $pc</div>
 <div class="px mono">₹$price</div>
@@ -339,15 +339,18 @@ transition:all 0.2s ease;margin-right:8px;display:flex;align-items:center;gap:4p
 .error-box p{color:var(--muted);font-size:13.5px;line-height:1.6}
 </style></head><body><div class="wrap">
 <div class="top"><div class="brand">Pivot<em>Desk</em></div>
-<div class="mkt"><a href="?reload=1" target="_parent" class="reload-lnk failed">🔄 Reload</a><span class="dot" style="width:8px;height:8px;border-radius:50%;background:var(--res);box-shadow:0 0 8px var(--res)"></span><span class="mono" style="color:var(--res)">FETCH FAILED</span></div></div>
+<div class="mkt"><a href="$reload_url" target="_parent" class="reload-lnk failed">🔄 Reload</a><span class="dot" style="width:8px;height:8px;border-radius:50%;background:var(--res);box-shadow:0 0 8px var(--res)"></span><span class="mono" style="color:var(--res)">FETCH FAILED</span></div></div>
 <div class="error-box">
   <h2>Data Fetch Failed</h2>
   <p>$error_msg — Yahoo may be rate-limiting. Retrying in 60s.</p>
 </div>
 </div></body></html>""")
 
-def render_error(ticker: str, error_msg: str) -> None:
-    html = HTML_ERROR.safe_substitute(error_msg=error_msg)
+def render_error(ticker: str, error_msg: str, entry: float = 0.0) -> None:
+    html = HTML_ERROR.safe_substitute(
+        error_msg=error_msg,
+        reload_url=f"?ticker={ticker}&entry={entry}&reload=1"
+    )
     st.iframe(html, height=350)
 
 def render(ticker: str, entry: float = 0.0, now: dt.datetime | None = None, reload_cls: str = "") -> None:
@@ -412,6 +415,7 @@ def render(ticker: str, entry: float = 0.0, now: dt.datetime | None = None, relo
         name=ticker.replace(".NS", "") + " · NSE",
         mkt_label=mkt_label,
         reload_cls=reload_cls,
+        reload_url=f"?ticker={ticker}&entry={entry}&reload=1",
         dot_color="var(--sup)" if is_open else "var(--dim)",
         dot_anim="animation:pulse 2s infinite" if is_open else "",
         ph=fmt(ph), pl=fmt(pl), pc=fmt(pc),
@@ -454,7 +458,12 @@ st.set_page_config(page_title="PivotDesk", page_icon="📐", layout="centered",
 if st.query_params.get("reload") == "1":
     fetch_live_price.clear()
     fetch_daily.clear()
+    params = st.query_params.to_dict()
+    if "reload" in params:
+        del params["reload"]
     st.query_params.clear()
+    for k, v in params.items():
+        st.query_params[k] = v
     st.session_state["reload_status"] = "success"
     st.rerun()
 
@@ -493,14 +502,25 @@ st.markdown("""<style>
   }
 </style>""", unsafe_allow_html=True)
 
+default_ticker = st.query_params.get("ticker", "BHAGYANGR.NS")
+default_entry = 0.0
+try:
+    default_entry = float(st.query_params.get("entry", "0.0"))
+except ValueError:
+    pass
+
 c1, c2 = st.columns([3, 2])
 with c1:
-    raw = st.text_input("NSE ticker", "BHAGYANGR.NS",
+    raw = st.text_input("NSE ticker", value=default_ticker,
                         help="Any NSE symbol — .NS is added automatically")
 with c2:
     entry = st.number_input("Your buy price ₹ (optional)", min_value=0.0,
-                            value=0.0, step=0.05, format="%.2f",
+                            value=default_entry, step=0.05, format="%.2f",
                             help="Average entry price — enables the position monitor")
+
+if raw != default_ticker or entry != default_entry:
+    st.query_params["ticker"] = raw
+    st.query_params["entry"] = str(entry)
 ticker = raw.strip().upper()
 if ticker and "." not in ticker:
     ticker += ".NS"
@@ -515,7 +535,7 @@ def dashboard() -> None:
         import traceback
         traceback.print_exc()
         st.session_state["reload_status"] = "failed"
-        render_error(ticker, str(e))
+        render_error(ticker, str(e), entry=entry)
 
 if ticker:
     dashboard()
