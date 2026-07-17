@@ -482,9 +482,51 @@ st.markdown("""<style>
   .stApp{background:#0A0E17}
   header, header[data-testid="stHeader"]{display:none!important}
   div[data-testid="stToolbar"],footer, div[data-testid="stDecoration"]{visibility:hidden;display:none!important}
-  .stTextInput input,.stNumberInput input{background:#141D30;color:#EDF2FB;
-    border:1px solid #2A3B5E;font-family:'IBM Plex Mono',monospace}
-  .stTextInput label,.stNumberInput label{color:#7E8DA8!important;font-size:12px!important}
+  /* Premium Input Styling */
+  .stTextInput input, div[data-testid="stNumberInputContainer"] {
+    background-color: #0D1527 !important;
+    color: #EDF2FB !important;
+    border: 1px solid #1E2C48 !important;
+    border-radius: 10px !important;
+    font-family: 'IBM Plex Mono', monospace !important;
+    transition: all 0.3s ease-in-out !important;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4) !important;
+  }
+  
+  /* Inner input inside number input container needs to have no border and same color */
+  div[data-testid="stNumberInputContainer"] input {
+    border: none !important;
+    background-color: transparent !important;
+    color: #EDF2FB !important;
+  }
+  
+  /* Focus glow states */
+  .stTextInput input:focus, div[data-testid="stNumberInputContainer"]:focus-within {
+    border-color: #6FA4FF !important;
+    box-shadow: 0 0 12px rgba(111, 164, 255, 0.25), inset 0 1px 3px rgba(0, 0, 0, 0.4) !important;
+    background-color: #111A30 !important;
+  }
+  
+  /* Style number input step buttons (+ and -) */
+  div[data-testid="stNumberInputContainer"] button {
+    background-color: transparent !important;
+    border: none !important;
+    color: #7E8DA8 !important;
+    transition: all 0.2s ease !important;
+  }
+  div[data-testid="stNumberInputContainer"] button:hover {
+    color: #6FA4FF !important;
+  }
+
+  /* Premium Labels styling */
+  .stTextInput label, .stNumberInput label {
+    color: #7E8DA8 !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.12em !important;
+    margin-bottom: 6px !important;
+  }
   
   /* Widen and center the main container and remove excess top padding */
   .stMainBlockContainer, .block-container, div[data-testid="stAppViewBlockContainer"] {
