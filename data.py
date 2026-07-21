@@ -108,8 +108,10 @@ def fetch_live_price(ticker: str) -> tuple[float, float, float] | None:
     chart aggregation lags the closing auction and misses part of the day's
     extremes. The quote matches the daily candle exactly.
 
-    Note this is the *last traded price*, which is not NSE's official closing
-    price — see the README. No Yahoo endpoint publishes the latter.
+    Intraday this is the last traded price; once the session ends the quote
+    settles to NSE's *official* close — the figure the daily candle carries and
+    the levels are built from, confirmed against NSE's bhavcopy on 10/10
+    symbols. A site quoting the last trade will disagree by a rupee or so.
 
     Returns ``None`` on any failure — errors are logged rather than
     silently swallowed.
