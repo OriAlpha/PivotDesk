@@ -205,9 +205,15 @@ def compute_indicators(df: pd.DataFrame, today: dt.date) -> IndicatorBundle:
 
     wpp = weekly_pivot(df, today)
 
+    # Returns use Adj Close so a dividend does not read as a loss. Measured on
+    # NSE largecaps, ignoring this distorts a single day's return by up to ~2%
+    # (INFY ex-div) and understates 1Y by roughly the dividend yield. Every
+    # other indicator here stays on raw Close, because the levels have to match
+    # what a broker terminal shows.
+    total_return_close = df["Adj Close"] if "Adj Close" in df.columns else close
     rets: list[tuple[str, float | None]] = []
     for lab, n in (("1W", 5), ("1M", 21), ("3M", 63), ("6M", 126), ("1Y", 252)):
-        rets.append((lab, pct_return(close, n)))
+        rets.append((lab, pct_return(total_return_close, n)))
 
     return IndicatorBundle(
         prev_high=ph,

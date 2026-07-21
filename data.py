@@ -14,7 +14,7 @@ import streamlit as st
 import yfinance as yf
 from curl_cffi import requests
 
-from config import IST, MARKET_CLOSE, MARKET_OPEN
+from config import HOLIDAY_GRACE, IST, MARKET_CLOSE, MARKET_OPEN
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,44 @@ def fetch_daily(ticker: str) -> pd.DataFrame:
         raise ValueError(
             f"No data for '{ticker}'. Check the symbol (e.g. BHAGYANGR.NS)."
         )
-    return df[["Open", "High", "Low", "Close", "Volume"]].dropna()
+    # Keep Adj Close alongside the raw OHLC. Levels must stay unadjusted so they
+    # match what a broker terminal shows, but returns should be total-return —
+    # see compute_indicators.
+    cols = ["Open", "High", "Low", "Close", "Volume"]
+    if "Adj Close" in df.columns:
+        cols.append("Adj Close")
+    return df[cols].dropna()
+
+
+@st.cache_resource
+def _last_good_daily() -> dict[str, pd.DataFrame]:
+    """Last successful daily frame per ticker, surviving cache expiry.
+
+    ``fetch_daily``'s TTL means a Yahoo rate-limit at the wrong moment leaves
+    nothing to render. Keeping the last good frame lets the dashboard degrade
+    to stale-but-labelled instead of a blank error page.
+    """
+    return {}
+
+
+def fetch_daily_resilient(ticker: str) -> tuple[pd.DataFrame, bool]:
+    """``(daily, is_stale)`` — fall back to the last good frame on failure.
+
+    Only falls back for a ticker that has succeeded before. A symbol we have
+    never fetched is far more likely to be a typo than a rate-limit, and
+    silently swallowing that would hide a real error.
+    """
+    store = _last_good_daily()
+    try:
+        df = fetch_daily(ticker)
+    except Exception as e:
+        cached = store.get(ticker)
+        if cached is None:
+            raise
+        logger.warning("Daily fetch failed for %s, serving last good: %s", ticker, e)
+        return cached, True
+    store[ticker] = df
+    return df, False
 
 
 @st.cache_data(ttl=55, show_spinner=False)
@@ -82,6 +119,18 @@ def fetch_live_price(ticker: str) -> tuple[float, float, float] | None:
     except Exception as e:
         logger.warning("Live price fetch failed for %s: %s", ticker, e)
     return None
+
+
+def is_holiday(daily_last: dt.date, now: dt.datetime) -> bool:
+    """True when a weekday inside market hours has no session of its own.
+
+    Derived rather than looked up: on a trading day Yahoo publishes a row for
+    today within minutes of the open, so a weekday that still has none well
+    after the bell is a holiday. Self-maintaining — no annual list to update.
+    """
+    if now.weekday() >= 5 or not (HOLIDAY_GRACE <= now.time() <= MARKET_CLOSE):
+        return False
+    return daily_last < now.date()
 
 
 def completed_sessions(df: pd.DataFrame, now: dt.datetime) -> pd.DataFrame:

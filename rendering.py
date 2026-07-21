@@ -16,8 +16,9 @@ import streamlit as st
 from config import IST
 from data import (
     completed_sessions,
-    fetch_daily,
+    fetch_daily_resilient,
     fetch_live_price,
+    is_holiday,
     market_status,
 )
 from indicators import compute_indicators
@@ -33,6 +34,44 @@ def fmt(x: float) -> str:
 def compose_read() -> str:
     """Data attribution footer."""
     return "Data: Yahoo Finance &middot; levels roll each NSE session"
+
+
+def sparkline_svg(closes: list[float], pivot: float, width: int = 900, height: int = 62) -> str:
+    """60-session close path with the daily pivot drawn across it.
+
+    Hand-rolled SVG rather than a charting library: the dashboard is already a
+    self-contained HTML document, so this costs no dependency and no JS.
+    """
+    if len(closes) < 2:
+        return ""
+    lo, hi = min(closes), max(closes)
+    # Include the pivot in the vertical range, otherwise its line can fall
+    # outside the viewBox and silently vanish.
+    lo, hi = min(lo, pivot), max(hi, pivot)
+    span = hi - lo or 1.0
+    pad = 6
+
+    def y(v: float) -> float:
+        return pad + (hi - v) / span * (height - 2 * pad)
+
+    step = width / (len(closes) - 1)
+    pts = [f"{i * step:.1f},{y(c):.1f}" for i, c in enumerate(closes)]
+    line = " ".join(pts)
+    area = f"0,{height} {line} {width},{height}"
+    rising = closes[-1] >= closes[0]
+    stroke = "var(--sup)" if rising else "var(--res)"
+    fill = "rgba(46,230,200,.10)" if rising else "rgba(255,107,107,.10)"
+    return (
+        f'<svg class="spark" viewBox="0 0 {width} {height}" preserveAspectRatio="none" '
+        f'role="img" aria-label="60-session close, {"up" if rising else "down"}">'
+        f'<polygon points="{area}" fill="{fill}"/>'
+        f'<polyline points="{line}" fill="none" stroke="{stroke}" stroke-width="2" '
+        f'vector-effect="non-scaling-stroke" stroke-linejoin="round"/>'
+        f'<line x1="0" y1="{y(pivot):.1f}" x2="{width}" y2="{y(pivot):.1f}" '
+        f'stroke="var(--pp)" stroke-width="1" stroke-dasharray="4 4" opacity=".7"/>'
+        f'<circle cx="{width}" cy="{y(closes[-1]):.1f}" r="3.5" fill="var(--price)"/>'
+        f"</svg>"
+    )
 
 
 # ---------------------------------------------------------------- price view
@@ -84,6 +123,37 @@ def resolve_price(
 # ---------------------------------------------------------------- scoring
 
 
+# One label per score, calibrated against 19,443 ticker-days (39 NSE symbols,
+# 2y each). Bucketing 5-6 as "Strong bullish" and 0-1 as "Strong bearish" put a
+# "Strong" verdict on 55.7% of all days — a headline that fires on the majority
+# of observations does not discriminate. Splitting them puts "Strong" on 21.1%,
+# with no bucket above 19% of days:
+#
+#     6/6  8.5%   5/6 16.0%   4/6 15.3%   3/6 15.0%
+#     2/6 14.0%   1/6 18.6%   0/6 12.5%
+BIAS_LABELS: dict[int, tuple[str, str]] = {
+    6: ("Strong bullish", "up"),
+    5: ("Bullish", "up"),
+    4: ("Leaning bullish", "up"),
+    3: ("Neutral", "warn"),
+    2: ("Leaning bearish", "dn"),
+    1: ("Bearish", "dn"),
+    0: ("Strong bearish", "dn"),
+}
+
+# Pairwise agreement measured on the same sample. The signals are not six
+# independent votes: price-vs-SMA20, price-vs-SMA50, Supertrend and MACD agree
+# with each other 76-80% of the time, against a ~50% baseline for independent
+# signals. Price-vs-pivot is the most orthogonal (52-62%) because it re-anchors
+# daily. Surfaced in the tooltip so the score is not read as 6 separate reads.
+SIGNAL_CAVEAT = (
+    "These are not 6 independent signals: the moving averages, Supertrend and "
+    "MACD agree 76-80% of the time (~50% would be independent), so a 6/6 or 0/6 "
+    "is closer to 3 confirming reads than 6. Price vs pivot is the most "
+    "independent of the set."
+)
+
+
 def technical_score(
     price: float,
     sma20: float,
@@ -94,22 +164,20 @@ def technical_score(
     pp: float,
 ) -> tuple[int, str, str]:
     """Count of 6 transparent bullish signals → (score, label, css_class)."""
-    score = sum(
-        [price > sma20, price > sma50, price > sma200, st_up, macd_bull, price > pp]
+    score = int(
+        sum([price > sma20, price > sma50, price > sma200, st_up, macd_bull, price > pp])
     )
-    if score >= 5:
-        return score, "Strong bullish", "up"
-    if score == 4:
-        return score, "Bullish", "up"
-    if score == 3:
-        return score, "Neutral", "warn"
-    if score == 2:
-        return score, "Bearish", "dn"
-    return score, "Strong bearish", "dn"
+    label, css = BIAS_LABELS[score]
+    return score, label, css
 
 
 def position_card(
-    entry: float, price: float, st_up: bool, st_stop: float, stale: bool = False
+    entry: float,
+    price: float,
+    st_up: bool,
+    st_stop: float,
+    stale: bool = False,
+    qty: float = 0.0,
 ) -> str:
     """Build the HTML for the position-tracking card."""
     if not entry or entry <= 0:
@@ -122,9 +190,17 @@ def position_card(
     pnl = (price / entry - 1) * 100
     pnl_color = "var(--sup)" if pnl >= 0 else "var(--res)"
     pnl_val = price - entry
-    pnl_val_str = (
-        f"+₹{pnl_val:,.2f}" if pnl_val >= 0 else f"-₹{abs(pnl_val):,.2f}"
-    )
+    # With a quantity the rupee figure is what you actually act on, so it leads;
+    # per-share is only meaningful when the size is unknown.
+    if qty and qty > 0:
+        total = pnl_val * qty
+        pnl_val_str = (
+            f"+₹{total:,.0f}" if total >= 0 else f"-₹{abs(total):,.0f}"
+        )
+    else:
+        pnl_val_str = (
+            f"+₹{pnl_val:,.2f}/sh" if pnl_val >= 0 else f"-₹{abs(pnl_val):,.2f}/sh"
+        )
 
     if st_up:
         pct_to_stop = (price - st_stop) / st_stop * 100 if st_stop else 0.0
@@ -141,14 +217,15 @@ def position_card(
     now_label = (
         f"last close ₹{fmt(price)} · not live" if stale else f"now ₹{fmt(price)}"
     )
+    size_label = f" · {qty:,.0f} sh" if qty and qty > 0 else ""
     return (
         f'<div class="vcard"><div class="k">Your position</div>'
         f'<div class="big mono" style="color:{pnl_color}">{pnl:+.1f}% '
         f'<span style="font-size:12.5px;font-weight:600;margin-left:4px">'
-        f"({pnl_val_str}/sh)</span></div>"
+        f"({pnl_val_str})</span></div>"
         f'<div class="sub2 {stat_cls}">{stat}</div>'
         f'<div class="sub2" style="font-size:11px;color:var(--dim)">'
-        f"entry ₹{fmt(entry)} · {now_label}</div></div>"
+        f"entry ₹{fmt(entry)}{size_label} · {now_label}</div></div>"
     )
 
 
@@ -240,6 +317,13 @@ padding:12px 16px;margin-bottom:10px;display:flex;align-items:center;justify-con
 .day-range-box .lbl{font-family:'IBM Plex Mono',monospace;font-weight:500}
 .day-range-box .bar-bg{position:relative;width:140px;height:5px;background:#1E2C48;border-radius:99px;box-shadow:inset 0 1px 2px rgba(0,0,0,.3)}
 .day-range-box .bar-dot{position:absolute;top:50%;transform:translate(-50%,-50%);width:9px;height:9px;background:var(--price);border-radius:50%;box-shadow:0 0 8px var(--price)}
+.sparkbox{margin:0 8px 26px}
+.sparkbox .spark{display:block;width:100%;height:62px;overflow:visible}
+.sparkbox .cap{display:flex;justify-content:space-between;color:var(--dim);font-size:10px;
+font-weight:800;letter-spacing:.1em;text-transform:uppercase;margin-top:4px}
+.databanner{background:rgba(255,197,61,.08);border:1px solid var(--pp);color:var(--pp);
+border-radius:10px;padding:8px 14px;margin-bottom:16px;text-align:center;
+font-size:11.5px;font-weight:800;letter-spacing:.05em}
 @keyframes pulse-warn {
   0% { color: #FFC53D; text-shadow: 0 0 4px rgba(255, 197, 61, 0.2); }
   50% { color: #FF6B6B; text-shadow: 0 0 10px rgba(255, 107, 107, 0.6); }
@@ -266,6 +350,9 @@ padding:12px 16px;margin-bottom:10px;display:flex;align-items:center;justify-con
 $chg_html
 $day_range_html
 </div>
+$data_banner
+<div class="sparkbox">$sparkline<div class="cap"><span>60 sessions</span>
+<span style="color:var(--pp)">— — pivot</span></div></div>
 <div class="spectrum">
 <div class="band"></div>
 <div class="tick t-s2"><span class="lab">S2</span><span class="val mono">$s2</span></div>
@@ -357,13 +444,27 @@ def render(
     now: dt.datetime | None = None,
     reload_cls: str = "",
     favorites_str: str = "",
+    qty: float = 0.0,
 ) -> None:
     """Build and display the full dashboard for *ticker*."""
     entry_val = float(entry) if entry is not None else 0.0
+    qty_val = float(qty) if qty else 0.0
     now = now or dt.datetime.now(IST)
     is_open, mkt_label = market_status(now)
 
-    daily = fetch_daily(ticker)
+    daily, daily_stale = fetch_daily_resilient(ticker)
+
+    # A weekday with no session row of its own is an NSE holiday: treat it as
+    # closed so we neither chase a live quote nor pulse an "open" indicator.
+    daily_last = (
+        daily.index[-1].astimezone(IST).date()
+        if daily.index.tz
+        else daily.index[-1].date()
+    )
+    holiday = not daily_stale and is_holiday(daily_last, now)
+    if holiday:
+        is_open, mkt_label = False, "MARKET CLOSED · NSE HOLIDAY"
+
     comp = completed_sessions(daily, now)
     if len(comp) < 60:
         st.error("Not enough history for this symbol (need ≥60 sessions).")
@@ -487,6 +588,8 @@ def render(
         f"{'🟢' if ind.st_up else '🔴'} Supertrend: Buy",
         f"{'🟢' if ind.macd_bull else '🔴'} MACD: Bullish",
         f"{'🟢' if price > piv['PP'] else '🔴'} Price > Pivot (₹{piv['PP']:,.2f})",
+        "",
+        SIGNAL_CAVEAT,
     ]
     bias_tooltip = "\n".join(tooltip_lines)
 
@@ -523,8 +626,17 @@ def render(
         bias_caution=bias_caution,
         bias_tooltip=bias_tooltip,
         day_range_html=day_range_html,
+        data_banner=(
+            '<div class="databanner">⚠ Yahoo data unavailable · showing the last '
+            "successful fetch, levels may be a session behind</div>"
+            if daily_stale
+            else ""
+        ),
+        sparkline=sparkline_svg(
+            [float(c) for c in comp["Close"].tail(60)], piv["PP"]
+        ),
         pos_card=position_card(
-            entry_val, price, ind.st_up, ind.st_stop, stale=pv.stale
+            entry_val, price, ind.st_up, ind.st_stop, stale=pv.stale, qty=qty_val
         ),
         ma_v=ma_v,
         ma_cls=ma_cls,

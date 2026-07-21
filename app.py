@@ -153,17 +153,22 @@ st.markdown("""<style>
 
 # ---------------------------------------------------------------- inputs
 
-default_ticker = st.query_params.get("ticker", "BHAGYANGR.NS")
-default_entry = None
-if "entry" in st.query_params:
+def _positive_param(name: str) -> float | None:
+    """Read a positive float from the query string, or None."""
+    if name not in st.query_params:
+        return None
     try:
-        val = float(st.query_params["entry"])
-        if val > 0:
-            default_entry = val
+        val = float(st.query_params[name])
     except ValueError:
-        pass
+        return None
+    return val if val > 0 else None
 
-c1, c2 = st.columns([3, 2])
+
+default_ticker = st.query_params.get("ticker", "BHAGYANGR.NS")
+default_entry = _positive_param("entry")
+default_qty = _positive_param("qty")
+
+c1, c2, c3 = st.columns([3, 2, 1.4])
 with c1:
     raw = st.text_input("NSE ticker", value=default_ticker,
                         help="Any NSE symbol — .NS is added automatically")
@@ -173,14 +178,25 @@ with c2:
                             placeholder="Enter entry price",
                             key=f"entry_input_{default_ticker}",
                             help="Average entry price — enables the position monitor")
+with c3:
+    qty = st.number_input("Qty (optional)", min_value=0.0,
+                          value=default_qty, step=1.0, format="%.0f",
+                          placeholder="Shares",
+                          key=f"qty_input_{default_ticker}",
+                          help="Share count — shows P&L in rupees instead of per share")
 
-if raw != default_ticker or (entry is not None and entry != default_entry) or (entry is None and default_entry is not None):
+
+def _sync(name: str, value: float | None) -> None:
+    if value is not None:
+        st.query_params[name] = str(value)
+    elif name in st.query_params:
+        del st.query_params[name]
+
+
+if (raw != default_ticker or entry != default_entry or qty != default_qty):
     st.query_params["ticker"] = raw
-    if entry is not None:
-        st.query_params["entry"] = str(entry)
-    else:
-        if "entry" in st.query_params:
-            del st.query_params["entry"]
+    _sync("entry", entry)
+    _sync("qty", qty)
 
 # ---------------------------------------------------------------- quick-access pills
 
@@ -195,8 +211,9 @@ for idx, fav in enumerate(favorites):
     with cols_fav[idx + 1]:
         if st.button(fav, key=f"fav_{fav}", use_container_width=True):
             st.query_params["ticker"] = fav + ".NS"
-            if "entry" in st.query_params:
-                del st.query_params["entry"]
+            for stale_param in ("entry", "qty"):
+                if stale_param in st.query_params:
+                    del st.query_params[stale_param]
             st.rerun()
 with cols_fav[-1]:
     show_edit = st.session_state.get("show_edit_favs", False)
@@ -222,7 +239,8 @@ if ticker and "." not in ticker:
 def dashboard() -> None:
     favs_str = st.query_params.get("favorites", DEFAULT_FAVORITES)
     try:
-        render(ticker, entry, reload_cls=reload_status, favorites_str=favs_str)
+        render(ticker, entry, reload_cls=reload_status, favorites_str=favs_str,
+               qty=qty)
     except ValueError as e:
         st.error(str(e))
     except Exception as e:

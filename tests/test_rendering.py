@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
-from rendering import position_card, resolve_price, technical_score
+from rendering import (
+    position_card,
+    resolve_price,
+    sparkline_svg,
+    technical_score,
+)
 
 # Last completed session, and the one before it.
 PREV_CLOSE, PREV_LOW, PREV_HIGH = 145.0, 143.0, 147.0
@@ -75,11 +82,11 @@ def _score(n: int):
     "n,label,cls",
     [
         (6, "Strong bullish", "up"),
-        (5, "Strong bullish", "up"),
-        (4, "Bullish", "up"),
+        (5, "Bullish", "up"),
+        (4, "Leaning bullish", "up"),
         (3, "Neutral", "warn"),
-        (2, "Bearish", "dn"),
-        (1, "Strong bearish", "dn"),
+        (2, "Leaning bearish", "dn"),
+        (1, "Bearish", "dn"),
         (0, "Strong bearish", "dn"),
     ],
 )
@@ -93,6 +100,18 @@ def test_technical_score_thresholds(n, label, cls):
 def test_technical_score_matches_the_documented_six_signals():
     assert _score(6)[0] == 6
     assert _score(0)[0] == 0
+
+
+def test_every_score_has_a_distinct_label():
+    """Regression: 5-6 and 0-1 shared a "Strong" label, so the headline verdict
+    fired on 55.7% of days (measured over 19,443 NSE ticker-days)."""
+    labels = [_score(n)[1] for n in range(7)]
+    assert len(set(labels)) == 7
+
+
+def test_only_the_extremes_are_called_strong():
+    strong = [n for n in range(7) if "Strong" in _score(n)[1]]
+    assert strong == [0, 6]
 
 
 # ---------------------------------------------------------------- position card
@@ -129,3 +148,43 @@ def test_position_card_marks_a_stale_price():
     stale = position_card(100.0, 110.0, True, 95.0, stale=True)
     assert "not live" not in fresh
     assert "not live" in stale
+
+
+def test_position_card_reports_rupees_when_given_a_quantity():
+    html = position_card(100.0, 110.0, True, 95.0, qty=40)
+    assert "+₹400" in html  # 40 shares x ₹10
+    assert "/sh" not in html
+    assert "40 sh" in html
+
+
+def test_position_card_falls_back_to_per_share_without_a_quantity():
+    assert "/sh" in position_card(100.0, 110.0, True, 95.0)
+    assert "/sh" in position_card(100.0, 110.0, True, 95.0, qty=0)
+
+
+# ---------------------------------------------------------------- sparkline
+
+
+def test_sparkline_needs_at_least_two_points():
+    assert sparkline_svg([], 100.0) == ""
+    assert sparkline_svg([100.0], 100.0) == ""
+
+
+def test_sparkline_draws_a_path_and_a_pivot_line():
+    svg = sparkline_svg([100.0, 105.0, 102.0, 108.0], 103.0)
+    assert svg.startswith('<svg class="spark"')
+    assert "<polyline" in svg and "<polygon" in svg
+    assert "stroke-dasharray" in svg
+
+
+def test_sparkline_colours_by_direction():
+    assert "--sup" in sparkline_svg([100.0, 110.0], 105.0)  # rising
+    assert "--res" in sparkline_svg([110.0, 100.0], 105.0)  # falling
+
+
+@pytest.mark.parametrize("pivot", [40.0, 100.5, 900.0])
+def test_sparkline_keeps_the_pivot_inside_the_viewbox(pivot):
+    """A pivot outside the close range must not be clipped out of sight."""
+    svg = sparkline_svg([100.0, 101.0, 102.0], pivot, height=62)
+    y = float(re.search(r'<line x1="0" y1="([\d.]+)"', svg).group(1))
+    assert 0 <= y <= 62
