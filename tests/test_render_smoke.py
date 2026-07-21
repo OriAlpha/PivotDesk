@@ -179,12 +179,35 @@ def test_new_high_reads_as_full_range_not_over_100_percent(rendered):
 # ---------------------------------------------------------------- sparkline
 
 
-def test_sparkline_is_drawn_with_the_pivot_overlaid(rendered):
+def test_sparkline_is_drawn_with_all_five_levels(rendered):
     html = rendered(**OPEN, live=(150.0, 148.0, 152.0))
     assert '<svg class="spark"' in html
     assert "<polyline" in html
-    assert "stroke-dasharray" in html  # the pivot line
-    assert "60 sessions" in html
+    assert len(re.findall(r'<line x1="0" y1="[\d.]+"', html)) == 5
+    assert "shaded = today" in html
+    assert '<span class="sc-hi">' in html and '<span class="sc-lo">' in html
+
+
+def test_sparkline_reaches_the_live_price_during_a_session(rendered):
+    """Regression: the curve stopped at the last completed close, so intraday
+    its right edge lagged the hero price by a full day."""
+    html = rendered(**OPEN, live=(9_999.0, 9_000.0, 9_999.0))
+    # A live price far above the 60-session range must set the top of the scale.
+    assert re.search(r'<span class="sc-hi">9,999\.00</span>', html)
+
+
+def test_sparkline_stops_at_the_last_close_when_the_market_is_shut(rendered):
+    """With no live quote the scale is set by the completed sessions and the
+    levels alone — nothing may leak in from a previous intraday render."""
+    from indicators import pivots
+
+    html = rendered(**CLOSED)
+    hi = float(re.search(r'sc-hi">([\d,.]+)<', html).group(1).replace(",", ""))
+    df = history(TUE)  # market shut, so today's row is a completed session
+    last = df.iloc[-1]
+    r2 = pivots(float(last["High"]), float(last["Low"]), float(last["Close"]))["R2"]
+    expected = max(float(df["Close"].tail(60).max()), r2)
+    assert hi == pytest.approx(expected, abs=0.01)  # label is rounded to 2dp
 
 
 # ---------------------------------------------------------------- position size
