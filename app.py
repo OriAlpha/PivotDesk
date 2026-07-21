@@ -13,6 +13,13 @@ import traceback
 import streamlit as st
 
 from data import fetch_daily, fetch_live_price
+from positions import (
+    Position,
+    format_positions,
+    parse_positions,
+    set_position,
+    symbol_key,
+)
 from rendering import render, render_error
 
 # ---------------------------------------------------------------- page config
@@ -165,8 +172,21 @@ def _positive_param(name: str) -> float | None:
 
 
 default_ticker = st.query_params.get("ticker", "BHAGYANGR.NS")
-default_entry = _positive_param("entry")
-default_qty = _positive_param("qty")
+book = parse_positions(st.query_params.get("positions", ""))
+current_symbol = symbol_key(default_ticker)
+
+# Fold any legacy ?entry=/?qty= URL into the book, so bookmarks made before
+# positions existed keep working instead of silently losing their cost basis.
+legacy_entry, legacy_qty = _positive_param("entry"), _positive_param("qty")
+if legacy_entry is not None or legacy_qty is not None:
+    book = set_position(book, current_symbol, legacy_entry, legacy_qty)
+    st.query_params["positions"] = format_positions(book)
+    for legacy in ("entry", "qty"):
+        if legacy in st.query_params:
+            del st.query_params[legacy]
+
+held = book.get(current_symbol, Position())
+default_entry, default_qty = held.entry, held.qty
 
 c1, c2, c3 = st.columns([3, 2, 1.4])
 with c1:
@@ -186,17 +206,19 @@ with c3:
                           help="Share count — shows P&L in rupees instead of per share")
 
 
-def _sync(name: str, value: float | None) -> None:
-    if value is not None:
-        st.query_params[name] = str(value)
-    elif name in st.query_params:
-        del st.query_params[name]
-
-
-if (raw != default_ticker or entry != default_entry or qty != default_qty):
+# A ticker change and a position edit are handled separately and never in the
+# same run. The entry/qty widgets are keyed to the *old* ticker while its
+# replacement is being typed, so writing them here would file one stock's cost
+# basis under another's name.
+if raw != default_ticker:
     st.query_params["ticker"] = raw
-    _sync("entry", entry)
-    _sync("qty", qty)
+    st.rerun()  # reload so the inputs repopulate from the new symbol's position
+elif entry != default_entry or qty != default_qty:
+    book = set_position(book, current_symbol, entry, qty)
+    if book:
+        st.query_params["positions"] = format_positions(book)
+    elif "positions" in st.query_params:
+        del st.query_params["positions"]
 
 # ---------------------------------------------------------------- quick-access pills
 
@@ -218,10 +240,8 @@ if show_favs:
     for idx, fav in enumerate(favorites):
         with cols_fav[idx]:
             if st.button(fav, key=f"fav_{fav}", use_container_width=True):
+                # The position travels with the symbol now — nothing to clear.
                 st.query_params["ticker"] = fav + ".NS"
-                for stale_param in ("entry", "qty"):
-                    if stale_param in st.query_params:
-                        del st.query_params[stale_param]
                 st.rerun()
     with cols_fav[-1]:
         show_edit = st.session_state.get("show_edit_favs", False)

@@ -55,6 +55,14 @@ Those shares are measured over 19,443 ticker-days (39 NSE symbols, 2 years each)
 
 Enter your average buy price to activate the **position monitor**: live P&L plus the level where the technical picture changes (the Supertrend stop). Add a quantity to see P&L in rupees rather than per share. This is a summary of indicator states — not a buy/sell recommendation.
 
+Positions are remembered per symbol and kept in the URL, alongside the ticker and your quick list:
+
+```
+?ticker=RELIANCE.NS&positions=RELIANCE:1200:50,TCS:3100.5:10
+```
+
+So switching symbols loads that stock's cost basis rather than clearing it, and one bookmark restores the whole book. Note this puts your cost basis in the address bar — bear that in mind before sharing a link or handing over your screen.
+
 ## How the levels work
 
 - **Daily pivots** use the previous completed session's High/Low/Close: `PP=(H+L+C)/3`, `R1=2PP−L`, `S1=2PP−H`, `R2=PP+(H−L)`, `S2=PP−(H−L)`. While the market is open, today's partial candle is excluded, so levels stay fixed for the session and roll forward automatically the next trading day.
