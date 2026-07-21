@@ -8,16 +8,13 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
-from zoneinfo import ZoneInfo
 
 import pandas as pd
 import streamlit as st
 import yfinance as yf
 from curl_cffi import requests
 
-IST = ZoneInfo("Asia/Kolkata")
-MARKET_OPEN = dt.time(9, 15)
-MARKET_CLOSE = dt.time(15, 30)
+from config import IST, MARKET_CLOSE, MARKET_OPEN
 
 logger = logging.getLogger(__name__)
 
@@ -87,13 +84,16 @@ def fetch_live_price(ticker: str) -> tuple[float, float, float] | None:
     return None
 
 
-def completed_sessions(
-    df: pd.DataFrame, now: dt.datetime, is_open: bool
-) -> pd.DataFrame:
-    """Drop today's partial candle while the market is open."""
+def completed_sessions(df: pd.DataFrame, now: dt.datetime) -> pd.DataFrame:
+    """Drop today's candle unless today's session has actually finished.
+
+    Anything dated today before 15:30 IST is a partial candle — during the
+    session *and* pre-open, where Yahoo may already publish a near-empty
+    row. Keying on the clock rather than on ``is_open`` covers both.
+    """
     last_date = (
         df.index[-1].astimezone(IST).date() if df.index.tz else df.index[-1].date()
     )
-    if is_open and last_date == now.date():
+    if last_date == now.date() and now.time() < MARKET_CLOSE:
         return df.iloc[:-1]
     return df

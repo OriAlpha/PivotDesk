@@ -26,29 +26,25 @@ st.set_page_config(
 
 # ---------------------------------------------------------------- reload logic
 
-# Check if query parameter "reload" is set to "1" to clear cache
+# ``.clear()`` empties the cache for the whole process, not just this session —
+# on Streamlit Community Cloud one process serves every viewer. So it is wired
+# only to the explicit Reload link, never to page or session load, where it
+# would multiply Yahoo requests and invite the rate-limiting it is meant to
+# recover from. Routine freshness is the TTLs' job (see data.py).
+DEFAULT_FAVORITES = "BHAGYANGR,RELIANCE,TCS,INFY,TATASTEEL"
+
 if st.query_params.get("reload") == "1":
     fetch_live_price.clear()
     fetch_daily.clear()
     params = st.query_params.to_dict()
-    if "reload" in params:
-        del params["reload"]
+    del params["reload"]
     st.query_params.clear()
     for k, v in params.items():
         st.query_params[k] = v
     st.session_state["reload_status"] = "success"
-    st.session_state["initialized"] = True
     st.rerun()
 
-# Clear cache on new browser tab session load
-if not st.session_state.get("initialized"):
-    fetch_live_price.clear()
-    fetch_daily.clear()
-    st.session_state["initialized"] = True
-
-reload_status = st.session_state.get("reload_status", "")
-if "reload_status" in st.session_state:
-    del st.session_state["reload_status"]
+reload_status = st.session_state.pop("reload_status", "")
 
 # ---------------------------------------------------------------- premium CSS
 
@@ -188,7 +184,7 @@ if raw != default_ticker or (entry is not None and entry != default_entry) or (e
 
 # ---------------------------------------------------------------- quick-access pills
 
-favs_str = st.query_params.get("favorites", "BHAGYANGR,RELIANCE,TCS,INFY,TATASTEEL")
+favs_str = st.query_params.get("favorites", DEFAULT_FAVORITES)
 favorites = [f.strip().upper() for f in favs_str.split(",") if f.strip()]
 
 col_widths = [1.2] + [1] * len(favorites) + [0.6]
@@ -224,14 +220,16 @@ if ticker and "." not in ticker:
 
 @st.fragment(run_every="60s")
 def dashboard() -> None:
-    favs_str = st.query_params.get("favorites", "BHAGYANGR,RELIANCE,TCS,INFY,TATASTEEL")
+    favs_str = st.query_params.get("favorites", DEFAULT_FAVORITES)
     try:
         render(ticker, entry, reload_cls=reload_status, favorites_str=favs_str)
     except ValueError as e:
         st.error(str(e))
     except Exception as e:
         traceback.print_exc()
-        st.session_state["reload_status"] = "failed"
+        # No reload_status write here: the header above already ran and will not
+        # re-run for a fragment refresh, and HTML_ERROR renders its own failed
+        # state. Setting it would only leak onto the next full page load.
         render_error(ticker, str(e), entry=entry, favorites_str=favs_str)
 
 if ticker:

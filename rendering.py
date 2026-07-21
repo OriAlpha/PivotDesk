@@ -8,12 +8,13 @@ entry points that produce the dashboard iframe.
 from __future__ import annotations
 
 import datetime as dt
+from dataclasses import dataclass
 from string import Template
 
 import streamlit as st
 
+from config import IST
 from data import (
-    IST,
     completed_sessions,
     fetch_daily,
     fetch_live_price,
@@ -32,6 +33,52 @@ def fmt(x: float) -> str:
 def compose_read() -> str:
     """Data attribution footer."""
     return "Data: Yahoo Finance &middot; levels roll each NSE session"
+
+
+# ---------------------------------------------------------------- price view
+
+
+@dataclass(frozen=True)
+class PriceView:
+    """What to display as *the* price, and what to measure its move against.
+
+    ``prev_close`` anchors the pivots for the **next** session, so it is not
+    always the right baseline for the day's change — see ``resolve_price``.
+    """
+
+    price: float
+    baseline: float  # close the change is measured against
+    day_low: float | None
+    day_high: float | None
+    stale: bool  # price is a fallback, not a live quote
+
+
+def resolve_price(
+    live: tuple[float, float, float] | None,
+    is_open: bool,
+    prev_close: float,
+    prev_low: float,
+    prev_high: float,
+    prior_close: float | None,
+) -> PriceView:
+    """Pick the displayed price and the close its change is measured against.
+
+    ``prev_*`` describe the last *completed* session — the one the pivots are
+    built from. ``prior_close`` is the close before that.
+
+    - Live quote available: price is live, measured against the last close.
+    - Market open but the quote failed: the last close is all we have, and it
+      is **not** the current price. Flag it rather than showing a fake +0.00.
+    - Market closed: the last completed session *is* today (or Friday), so the
+      move is measured against the session before it.
+    """
+    if live is not None:
+        price, day_low, day_high = live
+        return PriceView(price, prev_close, day_low, day_high, stale=False)
+    if is_open:
+        return PriceView(prev_close, prev_close, None, None, stale=True)
+    baseline = prior_close if prior_close is not None else prev_close
+    return PriceView(prev_close, baseline, prev_low, prev_high, stale=False)
 
 
 # ---------------------------------------------------------------- scoring
@@ -61,7 +108,9 @@ def technical_score(
     return score, "Strong bearish", "dn"
 
 
-def position_card(entry: float, price: float, st_up: bool, st_stop: float) -> str:
+def position_card(
+    entry: float, price: float, st_up: bool, st_stop: float, stale: bool = False
+) -> str:
     """Build the HTML for the position-tracking card."""
     if not entry or entry <= 0:
         return (
@@ -89,6 +138,9 @@ def position_card(entry: float, price: float, st_up: bool, st_stop: float) -> st
         stat = f"Trend broken · recovery above ₹{fmt(st_stop)}"
         stat_cls = "dn"
 
+    now_label = (
+        f"last close ₹{fmt(price)} · not live" if stale else f"now ₹{fmt(price)}"
+    )
     return (
         f'<div class="vcard"><div class="k">Your position</div>'
         f'<div class="big mono" style="color:{pnl_color}">{pnl:+.1f}% '
@@ -96,7 +148,7 @@ def position_card(entry: float, price: float, st_up: bool, st_stop: float) -> st
         f"({pnl_val_str}/sh)</span></div>"
         f'<div class="sub2 {stat_cls}">{stat}</div>'
         f'<div class="sub2" style="font-size:11px;color:var(--dim)">'
-        f"entry ₹{fmt(entry)} · now ₹{fmt(price)}</div></div>"
+        f"entry ₹{fmt(entry)} · {now_label}</div></div>"
     )
 
 
@@ -132,7 +184,9 @@ transition:all 0.2s ease;margin-right:8px;display:flex;align-items:center;gap:4p
 .hero h1{font-size:22px;font-weight:800}
 .hero .sub{color:var(--dim);font-size:12px;margin:4px 0 14px}
 .hero .px{font-size:62px;font-weight:600;color:var(--price);line-height:1;text-shadow:0 0 40px rgba(111,164,255,.4)}
-.hero .chg{color:$chg_color;font-size:15px;margin-top:8px}
+.hero .px.stale{color:var(--muted);text-shadow:none}
+.hero .chg{font-size:15px;margin-top:8px}
+.hero .chg.stale{color:var(--pp);font-size:12.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
 .spectrum{position:relative;margin:0 8px 44px;height:114px}
 .band{position:absolute;left:0;right:0;top:50px;height:14px;border-radius:99px;
 background:linear-gradient(90deg,#2EE6C8 0%,#1C7F71 22%,#2A3B5E 44%,#77602A 56%,#8F4040 78%,#FF6B6B 100%);
@@ -208,8 +262,8 @@ padding:12px 16px;margin-bottom:10px;display:flex;align-items:center;justify-con
 <div class="mkt"><a href="$reload_url" target="_parent" class="reload-lnk $reload_cls">🔄 Reload</a><span class="dot"></span><span class="mono">$mkt_label</span></div></div>
 <div class="hero"><h1>$name</h1>
 <div class="sub mono">Prev: H $ph · L $pl · C $pc</div>
-<div class="px mono">₹$price</div>
-<div class="chg mono">$chg_arrow $chg_abs ($chg_pct%)</div>
+<div class="px mono $px_cls">₹$price</div>
+$chg_html
 $day_range_html
 </div>
 <div class="spectrum">
@@ -310,7 +364,7 @@ def render(
     is_open, mkt_label = market_status(now)
 
     daily = fetch_daily(ticker)
-    comp = completed_sessions(daily, now, is_open)
+    comp = completed_sessions(daily, now)
     if len(comp) < 60:
         st.error("Not enough history for this symbol (need ≥60 sessions).")
         return
@@ -323,29 +377,49 @@ def render(
 
     # ---- live price (refreshes every 55 s independently of indicators)
     live = fetch_live_price(ticker) if is_open else None
-    if live is not None:
-        price, dl_val, dh_val = live
+    pv = resolve_price(
+        live,
+        is_open,
+        prev_close=pc,
+        prev_low=pl,
+        prev_high=ph,
+        prior_close=float(comp["Close"].iloc[-2]) if len(comp) >= 2 else None,
+    )
+    price = pv.price
+
+    # ---- day range bar (meaningless without a session to range over)
+    if pv.day_low is None or pv.day_high is None:
+        day_range_html = ""
     else:
-        price = pc
-        dl_val, dh_val = pl, ph
-
-    # ---- day range bar
-    day_span = dh_val - dl_val
-    px_pct_day = (price - dl_val) / day_span * 100 if day_span > 0 else 50.0
-    px_pct_day = max(2.0, min(98.0, px_pct_day))
-
-    day_range_html = f"""
+        day_span = pv.day_high - pv.day_low
+        px_pct_day = (
+            (price - pv.day_low) / day_span * 100 if day_span > 0 else 50.0
+        )
+        px_pct_day = max(2.0, min(98.0, px_pct_day))
+        day_range_html = f"""
     <div class="day-range-box">
-      <span class="lbl">L {fmt(dl_val)}</span>
+      <span class="lbl">L {fmt(pv.day_low)}</span>
       <div class="bar-bg">
         <div class="bar-dot" style="left: {px_pct_day:.1f}%"></div>
       </div>
-      <span class="lbl">H {fmt(dh_val)}</span>
+      <span class="lbl">H {fmt(pv.day_high)}</span>
     </div>
     """
 
-    chg = price - pc
-    chg_pct = chg / pc * 100 if pc else 0.0
+    # ---- change block (never fabricate a +0.00 for a price we could not fetch)
+    if pv.stale:
+        chg_html = (
+            '<div class="chg stale">⚠ Live price unavailable · '
+            "showing last close</div>"
+        )
+    else:
+        chg = price - pv.baseline
+        chg_pct = chg / pv.baseline * 100 if pv.baseline else 0.0
+        chg_html = (
+            f'<div class="chg mono" '
+            f'style="color:{"var(--sup)" if chg >= 0 else "var(--res)"}">'
+            f'{"▲" if chg >= 0 else "▼"} {chg:+,.2f} ({chg_pct:+.2f}%)</div>'
+        )
 
     # ---- moving-average classification (depends on live price)
     above = sum(price > m for m in (ind.sma20, ind.sma50, ind.sma200))
@@ -367,12 +441,12 @@ def render(
         else ("oversold" if ind.rsi_val <= 30 else "neutral zone")
     )
 
-    # ---- 52-week range position
-    rng_pct = (
-        (price - ind.lo52) / (ind.hi52 - ind.lo52) * 100
-        if ind.hi52 > ind.lo52
-        else 50.0
-    )
+    # ---- 52-week range position. The 52w bounds come from completed sessions,
+    # so a live price can sit outside them; widen rather than clamp, so a new
+    # high reads as 100% of range instead of an impossible 103%.
+    hi52 = max(ind.hi52, price)
+    lo52 = min(ind.lo52, price)
+    rng_pct = (price - lo52) / (hi52 - lo52) * 100 if hi52 > lo52 else 50.0
 
     # ---- returns HTML
     rets: list[str] = []
@@ -419,19 +493,19 @@ def render(
     # ---- final HTML assembly
     html = HTML.safe_substitute(
         name=ticker.replace(".NS", "") + " · NSE",
-        mkt_label=mkt_label,
+        mkt_label=f"{mkt_label} · STALE" if pv.stale else mkt_label,
         reload_cls=reload_cls,
         reload_url=f"?ticker={ticker}&entry={entry_val}&favorites={favorites_str}&reload=1",
-        dot_color="var(--sup)" if is_open else "var(--dim)",
-        dot_anim="animation:pulse 2s infinite" if is_open else "",
+        dot_color=(
+            "var(--pp)" if pv.stale else ("var(--sup)" if is_open else "var(--dim)")
+        ),
+        dot_anim="animation:pulse 2s infinite" if is_open and not pv.stale else "",
         ph=fmt(ph),
         pl=fmt(pl),
         pc=fmt(pc),
         price=fmt(price),
-        chg_color="var(--sup)" if chg >= 0 else "var(--res)",
-        chg_arrow="▲" if chg >= 0 else "▼",
-        chg_abs=f"{chg:+,.2f}",
-        chg_pct=f"{chg_pct:+.2f}",
+        px_cls="stale" if pv.stale else "",
+        chg_html=chg_html,
         pp=fmt(piv["PP"]),
         r1=fmt(piv["R1"]),
         r2=fmt(piv["R2"]),
@@ -449,7 +523,9 @@ def render(
         bias_caution=bias_caution,
         bias_tooltip=bias_tooltip,
         day_range_html=day_range_html,
-        pos_card=position_card(entry_val, price, ind.st_up, ind.st_stop),
+        pos_card=position_card(
+            entry_val, price, ind.st_up, ind.st_stop, stale=pv.stale
+        ),
         ma_v=ma_v,
         ma_cls=ma_cls,
         ma_s=ma_s,
@@ -463,7 +539,7 @@ def render(
         st_cls="up" if ind.st_up else "dn",
         st_stop=fmt(ind.st_stop),
         atr_v=fmt(ind.atr_val),
-        atr_pct=f"{ind.atr_val / price * 100:.1f}",
+        atr_pct=f"{ind.atr_val / price * 100:.1f}" if price else "—",
         vol_v=f"{ind.vol_ratio:.1f}",
         vol_cls=(
             "dn"

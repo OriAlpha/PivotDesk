@@ -9,13 +9,11 @@ from __future__ import annotations
 
 import datetime as dt
 from dataclasses import dataclass
-from zoneinfo import ZoneInfo
 
-import numpy as np
 import pandas as pd
 import streamlit as st
 
-IST = ZoneInfo("Asia/Kolkata")
+from config import IST
 
 # ---------------------------------------------------------------- primitives
 
@@ -35,10 +33,16 @@ def pivots(h: float, l: float, c: float) -> dict[str, float]:
 def rsi(close: pd.Series, period: int = 14) -> float:
     """Wilder-smoothed RSI."""
     delta = close.diff()
-    gain = delta.clip(lower=0).ewm(alpha=1 / period, adjust=False).mean()
-    loss = (-delta.clip(upper=0)).ewm(alpha=1 / period, adjust=False).mean()
-    rs = gain / loss.replace(0, np.nan)
-    return float((100 - 100 / (1 + rs)).iloc[-1])
+    gain = float(delta.clip(lower=0).ewm(alpha=1 / period, adjust=False).mean().iloc[-1])
+    loss = float(
+        (-delta.clip(upper=0)).ewm(alpha=1 / period, adjust=False).mean().iloc[-1]
+    )
+    if loss == 0:
+        # Textbook RSI is 100 when there is no downside at all. A perfectly
+        # flat series has no upside either, so report the neutral midpoint
+        # rather than a maximally bullish reading.
+        return 100.0 if gain > 0 else 50.0
+    return float(100 - 100 / (1 + gain / loss))
 
 
 def atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
@@ -99,6 +103,9 @@ def supertrend(
     for i in range(period, n):
         up = close_arr[i] > fub[i] if not up else close_arr[i] >= flb[i]
 
+    # Comparing NumPy scalars yields np.bool_; cast so the return type matches
+    # the annotation and callers can use ``is True`` (cf. macd_state).
+    up = bool(up)
     return up, float(flb[-1] if up else fub[-1])
 
 
@@ -109,7 +116,9 @@ def weekly_pivot(df: pd.DataFrame, today: dt.date) -> float:
         .agg({"High": "max", "Low": "min", "Close": "last"})
         .dropna()
     )
-    if not wk.empty:
+    if wk.empty:
+        raise ValueError("not enough history to compute a weekly pivot")
+    if len(wk) > 1:  # never trim away the only week we have
         wk_end = (
             wk.index[-1].date()
             if not wk.index.tz
@@ -118,7 +127,7 @@ def weekly_pivot(df: pd.DataFrame, today: dt.date) -> float:
         if wk_end >= today:  # current week still in progress
             wk = wk.iloc[:-1]
     h, l, c = wk.iloc[-1][["High", "Low", "Close"]]
-    return (h + l + c) / 3
+    return float((h + l + c) / 3)
 
 
 def pct_return(close: pd.Series, sessions: int) -> float | None:
@@ -155,7 +164,7 @@ class IndicatorBundle:
     returns: list[tuple[str, float | None]]
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=32)
 def compute_indicators(df: pd.DataFrame, today: dt.date) -> IndicatorBundle:
     """Compute every indicator from completed-session daily data.
 
