@@ -100,22 +100,34 @@ def fetch_daily_resilient(ticker: str) -> tuple[pd.DataFrame, bool]:
 
 @st.cache_data(ttl=55, show_spinner=False)
 def fetch_live_price(ticker: str) -> tuple[float, float, float] | None:
-    """Fetch latest intraday price, day-low, day-high (cached 55 s).
+    """Fetch latest price, day-low, day-high from Yahoo's quote (cached 55 s).
+
+    Reads the quote snapshot, **not** the 1-minute chart series. The 1m bars
+    disagree with the authoritative daily candle: measured across NSE names,
+    the last bar was off by up to ₹1.10 and the day high by ₹3.90, because the
+    chart aggregation lags the closing auction and misses part of the day's
+    extremes. The quote matches the daily candle exactly.
+
+    Note this is the *last traded price*, which is not NSE's official closing
+    price — see the README. No Yahoo endpoint publishes the latter.
 
     Returns ``None`` on any failure — errors are logged rather than
     silently swallowed.
     """
     try:
         session = get_session()
-        intra = yf.Ticker(ticker, session=session).history(
-            period="1d", interval="1m"
-        )
-        if not intra.empty:
-            return (
-                float(intra["Close"].iloc[-1]),
-                float(intra["Low"].min()),
-                float(intra["High"].max()),
+        quote = yf.Ticker(ticker, session=session).fast_info
+        price = float(quote["last_price"])
+        low = float(quote["day_low"])
+        high = float(quote["day_high"])
+        if not (price > 0 and low > 0 and high >= low):
+            logger.warning(
+                "Implausible quote for %s: last=%s low=%s high=%s",
+                ticker, price, low, high,
             )
+            return None
+        # Keep the day range coherent if the quote updates before its extremes.
+        return price, min(low, price), max(high, price)
     except Exception as e:
         logger.warning("Live price fetch failed for %s: %s", ticker, e)
     return None

@@ -9,7 +9,13 @@ import pytest
 
 import data
 from config import IST
-from data import completed_sessions, fetch_daily_resilient, is_holiday, market_status
+from data import (
+    completed_sessions,
+    fetch_daily_resilient,
+    fetch_live_price,
+    is_holiday,
+    market_status,
+)
 
 # 2026-07-21 is a Tuesday; 07-25 a Saturday; 07-26 a Sunday.
 TUE = dt.date(2026, 7, 21)
@@ -141,6 +147,73 @@ def test_resilient_fetch_propagates_for_a_never_seen_symbol(monkeypatch):
     monkeypatch.setattr(data, "fetch_daily", _raise(ValueError("No data for 'NOPE'")))
     with pytest.raises(ValueError):
         fetch_daily_resilient("NOPE.NS")
+
+
+# ---------------------------------------------------------------- live quote
+
+
+class _FakeQuote:
+    def __init__(self, **fields):
+        self._fields = fields
+
+    def __getitem__(self, key):
+        value = self._fields[key]
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+
+def _patch_quote(monkeypatch, quote):
+    monkeypatch.setattr(data, "get_session", lambda: None)
+    monkeypatch.setattr(
+        data.yf, "Ticker", lambda _t, session=None: type("T", (), {"fast_info": quote})
+    )
+
+
+def test_live_price_reads_the_quote_snapshot(monkeypatch):
+    """Regression: the 1-minute chart series was used instead, and disagreed
+    with the authoritative daily candle by up to ₹1.10 on price and ₹3.90 on
+    the day high."""
+    _patch_quote(
+        monkeypatch, _FakeQuote(last_price=1303.7, day_low=1302.7, day_high=1326.9)
+    )
+    assert fetch_live_price.__wrapped__("RELIANCE.NS") == (1303.7, 1302.7, 1326.9)
+
+
+def test_live_price_widens_the_range_to_contain_the_price(monkeypatch):
+    """The quote can tick past its own extremes between updates; the day-range
+    bar must not be handed a price outside its own bounds."""
+    _patch_quote(
+        monkeypatch, _FakeQuote(last_price=110.0, day_low=100.0, day_high=105.0)
+    )
+    price, low, high = fetch_live_price.__wrapped__("X.NS")
+    assert low <= price <= high
+
+
+@pytest.mark.parametrize(
+    "quote",
+    [
+        _FakeQuote(last_price=0.0, day_low=100.0, day_high=105.0),
+        _FakeQuote(last_price=-5.0, day_low=100.0, day_high=105.0),
+        _FakeQuote(last_price=100.0, day_low=0.0, day_high=105.0),
+        _FakeQuote(last_price=100.0, day_low=110.0, day_high=105.0),  # inverted
+        _FakeQuote(last_price=float("nan"), day_low=100.0, day_high=105.0),
+        _FakeQuote(last_price=KeyError("last_price")),
+    ],
+)
+def test_live_price_rejects_a_bad_quote(monkeypatch, quote):
+    _patch_quote(monkeypatch, quote)
+    assert fetch_live_price.__wrapped__("X.NS") is None
+
+
+def test_live_price_returns_none_when_the_fetch_fails(monkeypatch):
+    monkeypatch.setattr(data, "get_session", lambda: None)
+
+    def boom(_t, session=None):
+        raise RuntimeError("rate limited")
+
+    monkeypatch.setattr(data.yf, "Ticker", boom)
+    assert fetch_live_price.__wrapped__("X.NS") is None
 
 
 def test_resilient_fetch_keeps_each_ticker_separate(monkeypatch):

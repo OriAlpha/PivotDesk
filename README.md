@@ -80,6 +80,14 @@ The close that anchors the pivots is not always the right baseline for the day's
 
 If the *daily* fetch fails too, the dashboard falls back to the last frame it fetched successfully and says so in a banner, rather than replacing the page with an error. That fallback only applies to a symbol that has loaded before — an unrecognised ticker still errors, since a typo shouldn't look like an outage.
 
+### Why the close can differ from your broker
+
+Yahoo reports the **last traded price**. NSE's official closing price is the *volume-weighted average of the last 30 minutes* of trading. On liquid stocks these are nearly identical; on thin ones they can diverge by a rupee or more.
+
+A real example: BHAGYANGR traded around ₹380.90 into the close, then a final 339-share trade printed at ₹379.00. Yahoo's close is ₹379.00; NSE's official close — the figure your broker shows — is the ₹380.79 VWAP.
+
+This is a property of the free data source, not something the app can correct, and it feeds the pivots too, since `PP` uses that close. If the difference ever matters more than the convenience, NSE publishes a free daily bhavcopy with official OHLC that could replace Yahoo for the daily series.
+
 ## Disclaimer
 
 Everything shown is descriptive statistics computed from public price history. It is not a prediction, recommendation, or investment advice.
