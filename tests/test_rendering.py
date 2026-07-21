@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from rendering import position_card, resolve_price, technical_score
+from rendering import (
+    position_card,
+    resolve_price,
+    signal_chips,
+    technical_score,
+)
 
 # Last completed session, and the one before it.
 PREV_CLOSE, PREV_LOW, PREV_HIGH = 145.0, 143.0, 147.0
@@ -105,6 +110,34 @@ def test_every_score_has_a_distinct_label():
 def test_only_the_extremes_are_called_strong():
     strong = [n for n in range(7) if "Strong" in _score(n)[1]]
     assert strong == [0, 6]
+
+
+# ---------------------------------------------------------------- signal chips
+
+
+def test_signal_chips_render_one_per_signal():
+    html = signal_chips([True] * 6)
+    assert html.count("<span") == 6
+    for label in ("20D", "50D", "200D", "ST", "MACD", "PIV"):
+        assert label in html
+
+
+def test_signal_chips_distinguish_pass_from_fail():
+    html = signal_chips([True, False, True, False, True, False])
+    assert html.count('class="on"') == 3
+    assert html.count('class="off"') == 3
+
+
+def test_signal_chips_do_not_rely_on_colour_alone():
+    """Shape must carry the state too, for red-green colour blindness."""
+    assert "●" in signal_chips([True] + [False] * 5)
+    assert "○" in signal_chips([True] + [False] * 5)
+
+
+def test_signal_chip_order_matches_the_scoring_order():
+    # Only the third signal (200D) passes.
+    html = signal_chips([False, False, True, False, False, False])
+    assert '<span class="on">● 200D</span>' in html
 
 
 # ---------------------------------------------------------------- position card

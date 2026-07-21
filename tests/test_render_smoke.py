@@ -174,3 +174,36 @@ def test_new_high_reads_as_full_range_not_over_100_percent(rendered):
     an impossible reading like "103% of range"."""
     html = rendered(**OPEN, live=(9_999.0, 9_000.0, 9_999.0))
     assert int(re.search(r">(\d+)% of range<", html).group(1)) == 100
+
+
+# ---------------------------------------------------------------- bias card
+
+
+def test_the_signal_breakdown_needs_no_hover(rendered):
+    """Regression: the breakdown lived in a title attribute, so it required
+    hover and was invisible on every touch device."""
+    html = rendered(**OPEN, live=(150.0, 148.0, 152.0))
+    assert 'class="sigchips"' in html
+    assert "title=" not in html
+    assert "cursor:help" not in html
+    assert "ⓘ" not in html
+
+
+def test_all_six_signals_are_shown_on_the_card(rendered):
+    html = rendered(**OPEN, live=(150.0, 148.0, 152.0))
+    chips = re.search(r'<div class="sigchips">(.*?)</div>', html, re.S).group(1)
+    assert chips.count("<span") == 6
+    for label in ("20D", "50D", "200D", "ST", "MACD", "PIV"):
+        assert label in chips
+
+
+def test_the_chip_count_matches_the_headline_score(rendered):
+    html = rendered(**OPEN, live=(150.0, 148.0, 152.0))
+    chips = re.search(r'<div class="sigchips">(.*?)</div>', html, re.S).group(1)
+    score = int(re.search(r">(\d)/6 signals bullish", html).group(1))
+    assert chips.count('class="on"') == score
+
+
+def test_the_correlation_caveat_is_visible_not_hidden(rendered):
+    html = rendered(**OPEN, live=(150.0, 148.0, 152.0))
+    assert "Not six independent reads" in html

@@ -107,13 +107,29 @@ BIAS_LABELS: dict[int, tuple[str, str]] = {
 # independent votes: price-vs-SMA20, price-vs-SMA50, Supertrend and MACD agree
 # with each other 76-80% of the time, against a ~50% baseline for independent
 # signals. Price-vs-pivot is the most orthogonal (52-62%) because it re-anchors
-# daily. Surfaced in the tooltip so the score is not read as 6 separate reads.
+# daily. Shown on the card so the score is not read as six separate reads; the
+# full numbers are in the README.
 SIGNAL_CAVEAT = (
-    "These are not 6 independent signals: the moving averages, Supertrend and "
-    "MACD agree 76-80% of the time (~50% would be independent), so a 6/6 or 0/6 "
-    "is closer to 3 confirming reads than 6. Price vs pivot is the most "
-    "independent of the set."
+    "Not six independent reads — the MAs, Supertrend and MACD agree 76–80% of "
+    "the time. Price vs pivot is the most independent."
 )
+
+# Short labels for the per-signal chips, in scoring order.
+SIGNAL_LABELS = ("20D", "50D", "200D", "ST", "MACD", "PIV")
+
+
+def signal_chips(flags: list[bool]) -> str:
+    """Per-signal pass/fail chips.
+
+    Replaces a ``title`` tooltip, which needs hover and so was invisible on
+    every touch device — taking the whole point of a transparent score with
+    it. Shape (● / ○) carries the state as well as colour, so the row does not
+    rely on red-green discrimination.
+    """
+    return "".join(
+        f'<span class="{"on" if ok else "off"}">{"●" if ok else "○"} {label}</span>'
+        for label, ok in zip(SIGNAL_LABELS, flags)
+    )
 
 
 def technical_score(
@@ -249,6 +265,12 @@ box-shadow:0 0 22px rgba(111,164,255,.6)}
 .vcard .k{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--dim);font-weight:800;margin-bottom:8px}
 .vcard .big{font-size:24px;font-weight:800}
 .vcard .sub2{font-size:12px;color:var(--muted);margin-top:5px;font-weight:600}
+.sigchips{display:flex;flex-wrap:wrap;gap:5px;justify-content:center;margin-top:10px}
+.sigchips span{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:700;
+padding:3px 8px;border-radius:99px;border:1px solid;letter-spacing:.04em;white-space:nowrap}
+.sigchips span.on{color:var(--sup);border-color:rgba(46,230,200,.35);background:rgba(46,230,200,.07)}
+.sigchips span.off{color:var(--res);border-color:rgba(255,107,107,.30);background:rgba(255,107,107,.06)}
+.sigfoot{font-size:10px;color:var(--dim);margin-top:9px;line-height:1.45;font-weight:600}
 .grid{display:grid;grid-template-columns:340px 1fr;gap:16px}
 @media(max-width:760px){.grid{grid-template-columns:1fr}}
 .panelbox{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px 20px}
@@ -323,7 +345,9 @@ $data_banner
 <div class="verdict">
 <div class="vcard"><div class="k">Technical bias</div>
 <div class="big $bias_cls">$bias_label</div>
-<div class="sub2" title="$bias_tooltip" style="cursor:help">$bias_n/6 signals bullish$bias_caution <span style="font-size:10.5px;color:var(--dim)">ⓘ</span></div></div>
+<div class="sub2">$bias_n/6 signals bullish$bias_caution</div>
+<div class="sigchips">$bias_chips</div>
+<div class="sigfoot">$bias_note</div></div>
 $pos_card
 </div>
 <div class="grid">
@@ -532,22 +556,17 @@ def render(
     else:
         bias_caution = ""
 
-    # ---- tooltip
-    sig_sma20 = price > ind.sma20
-    sig_sma50 = price > ind.sma50
-    sig_sma200 = price > ind.sma200
-    tooltip_lines = [
-        "Technical Bias Breakdown:",
-        f"{'🟢' if sig_sma20 else '🔴'} Price > 20D MA (₹{ind.sma20:,.0f})",
-        f"{'🟢' if sig_sma50 else '🔴'} Price > 50D MA (₹{ind.sma50:,.0f})",
-        f"{'🟢' if sig_sma200 else '🔴'} Price > 200D MA (₹{ind.sma200:,.0f})",
-        f"{'🟢' if ind.st_up else '🔴'} Supertrend: Buy",
-        f"{'🟢' if ind.macd_bull else '🔴'} MACD: Bullish",
-        f"{'🟢' if price > piv['PP'] else '🔴'} Price > Pivot (₹{piv['PP']:,.2f})",
-        "",
-        SIGNAL_CAVEAT,
-    ]
-    bias_tooltip = "\n".join(tooltip_lines)
+    # ---- per-signal breakdown, in the same order technical_score counts them
+    bias_chips = signal_chips(
+        [
+            price > ind.sma20,
+            price > ind.sma50,
+            price > ind.sma200,
+            ind.st_up,
+            ind.macd_bull,
+            price > piv["PP"],
+        ]
+    )
 
     # ---- final HTML assembly
     html = HTML.safe_substitute(
@@ -580,7 +599,8 @@ def render(
         bias_cls=bias_cls,
         bias_n=str(score),
         bias_caution=bias_caution,
-        bias_tooltip=bias_tooltip,
+        bias_chips=bias_chips,
+        bias_note=SIGNAL_CAVEAT,
         day_range_html=day_range_html,
         data_banner=(
             '<div class="databanner">⚠ Yahoo data unavailable · showing the last '

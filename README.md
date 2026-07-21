@@ -51,7 +51,9 @@ The **Technical bias** card counts six transparent bullish signals: price above 
 
 Those shares are measured over 19,443 ticker-days (39 NSE symbols, 2 years each). The buckets matter: grouping 5–6 as "Strong bullish" and 0–1 as "Strong bearish" put a *Strong* verdict on **55.7% of all days**, which is not a verdict at all. One label per score puts it on 21.1%.
 
-**The six signals are not independent.** On the same sample, price-vs-SMA20, price-vs-SMA50, Supertrend and MACD agree with each other 76–80% of the time, against a ~50% baseline for genuinely independent signals — so 6/6 is closer to three confirming reads than six. Price-vs-pivot is the most orthogonal of the set (52–62%) because it re-anchors daily. The tooltip says so too.
+**The six signals are not independent.** On the same sample, price-vs-SMA20, price-vs-SMA50, Supertrend and MACD agree with each other 76–80% of the time, against a ~50% baseline for genuinely independent signals — so 6/6 is closer to three confirming reads than six. Price-vs-pivot is the most orthogonal of the set (52–62%) because it re-anchors daily. The card says so too.
+
+The card also shows which of the six signals are firing, as a row of chips (`● 50D`, `○ MACD`) always visible rather than behind a hover tooltip — hover doesn't exist on touch devices, and the breakdown is the whole reason the score is worth trusting. State is carried by shape as well as colour, so the row doesn't depend on telling red from green.
 
 Enter your average buy price to activate the **position monitor**: live P&L plus the level where the technical picture changes (the Supertrend stop). Add a quantity to see P&L in rupees rather than per share. This is a summary of indicator states — not a buy/sell recommendation.
 
