@@ -203,31 +203,39 @@ if (raw != default_ticker or entry != default_entry or qty != default_qty):
 favs_str = st.query_params.get("favorites", DEFAULT_FAVORITES)
 favorites = [f.strip().upper() for f in favs_str.split(",") if f.strip()]
 
-col_widths = [1.2] + [1] * len(favorites) + [0.6]
-cols_fav = st.columns(col_widths, gap="small")
-with cols_fav[0]:
-    st.markdown("<div style='color:#7E8DA8;font-size:11px;font-weight:700;margin-top:6px;text-transform:uppercase;letter-spacing:0.05em'>Quick list:</div>", unsafe_allow_html=True)
-for idx, fav in enumerate(favorites):
-    with cols_fav[idx + 1]:
-        if st.button(fav, key=f"fav_{fav}", use_container_width=True):
-            st.query_params["ticker"] = fav + ".NS"
-            for stale_param in ("entry", "qty"):
-                if stale_param in st.query_params:
-                    del st.query_params[stale_param]
-            st.rerun()
-with cols_fav[-1]:
-    show_edit = st.session_state.get("show_edit_favs", False)
-    if st.button("✏️", key="toggle_edit_favs", help="Edit favorite stock list"):
-        st.session_state["show_edit_favs"] = not show_edit
+show_favs = st.session_state.get("show_favs", False)
+toggle_col, _ = st.columns([1.4, 6], gap="small")
+with toggle_col:
+    if st.button(f"Quick list {'▴' if show_favs else '▾'}", key="toggle_favs",
+                 use_container_width=True, help="Show or hide your saved symbols"):
+        st.session_state["show_favs"] = not show_favs
+        if show_favs:  # collapsing also closes the editor beneath it
+            st.session_state["show_edit_favs"] = False
         st.rerun()
 
-if st.session_state.get("show_edit_favs", False):
-    new_favs = st.text_input("Edit favorites (comma-separated, e.g. TCS, RELIANCE, INFY)", 
-                             value=favs_str, 
-                             help="Type your symbols, then press Enter to save to your Quick list")
-    if new_favs != favs_str:
-        st.query_params["favorites"] = new_favs
-        st.rerun()
+if show_favs:
+    cols_fav = st.columns([1] * len(favorites) + [0.6], gap="small")
+    for idx, fav in enumerate(favorites):
+        with cols_fav[idx]:
+            if st.button(fav, key=f"fav_{fav}", use_container_width=True):
+                st.query_params["ticker"] = fav + ".NS"
+                for stale_param in ("entry", "qty"):
+                    if stale_param in st.query_params:
+                        del st.query_params[stale_param]
+                st.rerun()
+    with cols_fav[-1]:
+        show_edit = st.session_state.get("show_edit_favs", False)
+        if st.button("✏️", key="toggle_edit_favs", help="Edit favorite stock list"):
+            st.session_state["show_edit_favs"] = not show_edit
+            st.rerun()
+
+    if st.session_state.get("show_edit_favs", False):
+        new_favs = st.text_input("Edit favorites (comma-separated, e.g. TCS, RELIANCE, INFY)",
+                                 value=favs_str,
+                                 help="Type your symbols, then press Enter to save to your Quick list")
+        if new_favs != favs_str:
+            st.query_params["favorites"] = new_favs
+            st.rerun()
 
 ticker = raw.strip().upper()
 if ticker and "." not in ticker:
