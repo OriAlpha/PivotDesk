@@ -10,7 +10,6 @@ from __future__ import annotations
 import datetime as dt
 from dataclasses import dataclass
 from string import Template
-from typing import NamedTuple
 
 import streamlit as st
 
@@ -35,85 +34,6 @@ def fmt(x: float) -> str:
 def compose_read() -> str:
     """Data attribution footer."""
     return "Data: Yahoo Finance &middot; levels roll each NSE session"
-
-
-class Sparkline(NamedTuple):
-    """Rendered sparkline plus the value range it was scaled to."""
-
-    svg: str
-    low: float
-    high: float
-
-
-SPARK_HEIGHT = 120
-
-
-def sparkline_svg(
-    closes: list[float],
-    levels: dict[str, float],
-    live: float | None = None,
-    width: int = 900,
-    height: int = SPARK_HEIGHT,
-) -> Sparkline:
-    """60-session close path with today's pivot levels drawn across it.
-
-    The point is not the price history — the returns pills already give that
-    numerically. It is whether today's levels land where this stock actually
-    turns, which no other panel answers.
-
-    Measured across NSE names, S2..R2 spans only 8-30% of the 60-session range,
-    so five discrete lines collapse into an unreadable pile on tight-range
-    stocks. The zone is shaded instead: it stays legible at any width, and a
-    thin bright strip is itself the message that today's expected range is
-    small relative to recent movement.
-
-    Hand-rolled SVG rather than a charting library — the dashboard is already
-    a self-contained HTML document, so this costs no dependency and no JS.
-    """
-    pts = list(closes) + ([live] if live is not None else [])
-    if len(pts) < 2:
-        return Sparkline("", 0.0, 0.0)
-    # Levels must be inside the viewBox or their lines silently vanish.
-    lo = min(min(pts), levels["S2"])
-    hi = max(max(pts), levels["R2"])
-    span = hi - lo or 1.0
-    pad = 8
-
-    def y(v: float) -> float:
-        return pad + (hi - v) / span * (height - 2 * pad)
-
-    step = width / (len(pts) - 1)
-    coords = " ".join(f"{i * step:.1f},{y(v):.1f}" for i, v in enumerate(pts))
-    rising = pts[-1] >= pts[0]
-
-    def hline(key: str, colour: str, dash: str = "", opacity: str = "1") -> str:
-        return (
-            f'<line x1="0" y1="{y(levels[key]):.1f}" x2="{width}" '
-            f'y2="{y(levels[key]):.1f}" stroke="{colour}" stroke-width="1" '
-            f'{dash} opacity="{opacity}" vector-effect="non-scaling-stroke"/>'
-        )
-
-    zone_top, zone_bot = y(levels["R2"]), y(levels["S2"])
-    svg = (
-        f'<svg class="spark" viewBox="0 0 {width} {height}" '
-        f'preserveAspectRatio="none" role="img" aria-label="60-session closes, '
-        f'{"up" if rising else "down"}, with today\'s pivot levels">'
-        f'<rect x="0" y="{zone_top:.1f}" width="{width}" '
-        f'height="{max(0.6, zone_bot - zone_top):.1f}" fill="rgba(255,197,61,.07)"/>'
-        f'<polygon points="0,{height} {coords} {width},{height}" '
-        f'fill="{"rgba(46,230,200,.10)" if rising else "rgba(255,107,107,.10)"}"/>'
-        + hline("S2", "var(--sup)", 'stroke-dasharray="3 3"', ".40")
-        + hline("S1", "var(--sup)", "", ".60")
-        + hline("R1", "var(--res)", "", ".60")
-        + hline("R2", "var(--res)", 'stroke-dasharray="3 3"', ".40")
-        + hline("PP", "var(--pp)", 'stroke-dasharray="5 4"', ".90")
-        + f'<polyline points="{coords}" fill="none" stroke-linejoin="round" '
-        f'stroke="{"var(--sup)" if rising else "var(--res)"}" stroke-width="2" '
-        f'vector-effect="non-scaling-stroke"/>'
-        f'<circle cx="{width}" cy="{y(pts[-1]):.1f}" r="3.5" fill="var(--price)"/>'
-        "</svg>"
-    )
-    return Sparkline(svg, lo, hi)
 
 
 # ---------------------------------------------------------------- price view
@@ -359,19 +279,6 @@ padding:12px 16px;margin-bottom:10px;display:flex;align-items:center;justify-con
 .day-range-box .lbl{font-family:'IBM Plex Mono',monospace;font-weight:500}
 .day-range-box .bar-bg{position:relative;width:140px;height:5px;background:#1E2C48;border-radius:99px;box-shadow:inset 0 1px 2px rgba(0,0,0,.3)}
 .day-range-box .bar-dot{position:absolute;top:50%;transform:translate(-50%,-50%);width:9px;height:9px;background:var(--price);border-radius:50%;box-shadow:0 0 8px var(--price)}
-.sparkbox{position:relative;margin:0 8px 26px}
-.sparkbox .spark{display:block;width:100%;height:120px}
-/* Scale labels live in HTML, not SVG text: the chart stretches horizontally
-   (preserveAspectRatio=none) and would distort any glyphs inside it. */
-.sparkbox .sc-hi,.sparkbox .sc-lo{position:absolute;left:3px;font-family:'IBM Plex Mono',monospace;
-font-size:9.5px;font-weight:600;color:var(--dim);pointer-events:none;background:rgba(10,14,23,.55);
-padding:0 3px;border-radius:3px}
-.sparkbox .sc-hi{top:2px}
-.sparkbox .sc-lo{top:104px}
-.sparkbox .cap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 10px;
-color:var(--dim);font-size:10px;font-weight:800;letter-spacing:.08em;
-text-transform:uppercase;margin-top:5px}
-.sparkbox .cap .zone{color:var(--pp);opacity:.85}
 .databanner{background:rgba(255,197,61,.08);border:1px solid var(--pp);color:var(--pp);
 border-radius:10px;padding:8px 14px;margin-bottom:16px;text-align:center;
 font-size:11.5px;font-weight:800;letter-spacing:.05em}
@@ -402,8 +309,6 @@ $chg_html
 $day_range_html
 </div>
 $data_banner
-<div class="sparkbox">$spark_scale$sparkline<div class="cap"><span>60 sessions · closes</span>
-<span class="zone">shaded = today's S2–R2 · dashed = pivot</span></div></div>
 <div class="spectrum">
 <div class="band"></div>
 <div class="tick t-s2"><span class="lab">S2</span><span class="val mono">$s2</span></div>
@@ -616,15 +521,6 @@ def render(
     def pivot_pct(v: float) -> float:
         return max(2.0, min(98.0, 4 + 92 * (v - piv["S2"]) / span))
 
-    # ---- sparkline. The close series stops at the last completed session, so
-    # during a live session the curve is extended to the current price —
-    # otherwise its right edge lags the number in the hero by a full day.
-    spark = sparkline_svg(
-        [float(c) for c in comp["Close"].tail(60)],
-        piv,
-        live=price if (is_open and not pv.stale) else None,
-    )
-
     # ---- technical bias
     score, bias_label, bias_cls = technical_score(
         price, ind.sma20, ind.sma50, ind.sma200, ind.st_up, ind.macd_bull, piv["PP"]
@@ -690,13 +586,6 @@ def render(
             '<div class="databanner">⚠ Yahoo data unavailable · showing the last '
             "successful fetch, levels may be a session behind</div>"
             if daily_stale
-            else ""
-        ),
-        sparkline=spark.svg,
-        spark_scale=(
-            f'<span class="sc-hi">{fmt(spark.high)}</span>'
-            f'<span class="sc-lo">{fmt(spark.low)}</span>'
-            if spark.svg
             else ""
         ),
         pos_card=position_card(

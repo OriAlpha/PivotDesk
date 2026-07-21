@@ -55,19 +55,6 @@ Those shares are measured over 19,443 ticker-days (39 NSE symbols, 2 years each)
 
 Enter your average buy price to activate the **position monitor**: live P&L plus the level where the technical picture changes (the Supertrend stop). Add a quantity to see P&L in rupees rather than per share. This is a summary of indicator states — not a buy/sell recommendation.
 
-## Reading the sparkline
-
-The chart under the price is 60 completed daily closes with **today's pivot levels drawn across them**. It exists to answer one question the rest of the dashboard doesn't: *are today's levels where this stock actually turns?* A pivot at ₹1,320 means something very different if price has bounced off ₹1,320 four times in three months than if it's a number that fell out of yesterday's arithmetic.
-
-- **Amber shaded band** — today's S2→R2 range. **Dashed amber line** — the pivot. Faint teal/red lines inside the band are S1/R1; dashed teal/red at the edges are S2/R2. Same colours as the spectrum below it.
-- **Does the band cut through congestion or empty space?** If the price path has repeatedly turned around inside that band, today's levels are worth watching. If it floats through a gap, they're just arithmetic.
-- **A thin band is itself information** — it means today's expected range is small relative to the last three months. Across NSE names the S2–R2 span is only 8–30% of the 60-session range.
-- **The line colour** is the net direction over the whole window, not today's move: teal if the last point is above the first, red if below.
-- **Small numbers at the left edge** are the top and bottom of the vertical scale.
-- **The blue dot** is the current price. During a live session the curve is extended to it, so the right edge always matches the big number above.
-
-The shape matters too: −5% as a steady grind down is a different situation from −5% that crashed and recovered, and the returns pills report both as the same number.
-
 ## How the levels work
 
 - **Daily pivots** use the previous completed session's High/Low/Close: `PP=(H+L+C)/3`, `R1=2PP−L`, `S1=2PP−H`, `R2=PP+(H−L)`, `S2=PP−(H−L)`. While the market is open, today's partial candle is excluded, so levels stay fixed for the session and roll forward automatically the next trading day.
