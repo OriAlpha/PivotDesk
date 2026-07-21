@@ -1,0 +1,24 @@
+[project]
+name = "pivotdesk"
+version = "0.1.0"
+description = "Live pivot-point dashboard for NSE stocks."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    # st.iframe and st.number_input(value=None) are both well past 1.37;
+    # the app raises AttributeError on older releases.
+    "streamlit>=1.59,<2",
+    "yfinance>=1.5,<2",
+    "pandas>=2.2,<4",
+    "curl-cffi>=0.13,<1",
+]
+
+[dependency-groups]
+dev = ["pytest>=8,<10"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
