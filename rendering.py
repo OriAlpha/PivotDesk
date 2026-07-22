@@ -104,7 +104,7 @@ BIAS_LABELS: dict[int, tuple[str, str]] = {
 }
 
 # Short labels for the per-signal chips, in scoring order.
-SIGNAL_LABELS = ("20D", "50D", "200D", "ST", "MACD", "PIV")
+SIGNAL_LABELS = ("20D", "50D", "200D", "ST", "MACD", "PP")
 
 
 def signal_chips(flags: list[bool]) -> str:

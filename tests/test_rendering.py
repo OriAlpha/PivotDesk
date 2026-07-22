@@ -118,7 +118,7 @@ def test_only_the_extremes_are_called_strong():
 def test_signal_chips_render_one_per_signal():
     html = signal_chips([True] * 6)
     assert html.count("<span") == 6
-    for label in ("20D", "50D", "200D", "ST", "MACD", "PIV"):
+    for label in ("20D", "50D", "200D", "ST", "MACD", "PP"):
         assert label in html
 
 

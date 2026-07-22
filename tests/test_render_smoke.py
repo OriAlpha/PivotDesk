@@ -193,7 +193,7 @@ def test_all_six_signals_are_shown_on_the_card(rendered):
     html = rendered(**OPEN, live=(150.0, 148.0, 152.0))
     chips = re.search(r'<div class="sigchips">(.*?)</div>', html, re.S).group(1)
     assert chips.count("<span") == 6
-    for label in ("20D", "50D", "200D", "ST", "MACD", "PIV"):
+    for label in ("20D", "50D", "200D", "ST", "MACD", "PP"):
         assert label in chips
 
 

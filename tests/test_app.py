@@ -194,3 +194,17 @@ def test_a_junk_positions_url_does_not_break_the_page(monkeypatch):
     at = _fresh(monkeypatch, ticker="RELIANCE.NS", positions="!!!:::,,,")
     assert not at.exception
     assert entry_input(at).value is None
+
+
+def test_reload_param_clears_cache_and_restores_params(monkeypatch):
+    at = _fresh(
+        monkeypatch,
+        ticker="RELIANCE.NS",
+        reload="1",
+        positions="RELIANCE:1200:50,TCS:3100.5:10",
+    )
+    assert not at.exception
+    assert query_param(at, "reload") is None
+    assert query_param(at, "ticker") == "RELIANCE.NS"
+    assert query_param(at, "positions") == "RELIANCE:1200:50,TCS:3100.5:10"
+
