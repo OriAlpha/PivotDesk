@@ -266,9 +266,10 @@ if ticker and "." not in ticker:
 @st.fragment(run_every="60s")
 def dashboard() -> None:
     favs_str = st.query_params.get("favorites", DEFAULT_FAVORITES)
+    pos_str = st.query_params.get("positions", "")
     try:
         render(ticker, entry, reload_cls=reload_status, favorites_str=favs_str,
-               qty=qty)
+               qty=qty, positions_str=pos_str)
     except ValueError as e:
         st.error(str(e))
     except Exception as e:
@@ -276,7 +277,7 @@ def dashboard() -> None:
         # No reload_status write here: the header above already ran and will not
         # re-run for a fragment refresh, and HTML_ERROR renders its own failed
         # state. Setting it would only leak onto the next full page load.
-        render_error(ticker, str(e), entry=entry, favorites_str=favs_str)
+        render_error(ticker, str(e), entry=entry, favorites_str=favs_str, positions_str=pos_str)
 
 if ticker:
     dashboard()

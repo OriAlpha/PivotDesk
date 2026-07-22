@@ -207,3 +207,20 @@ def test_the_chip_count_matches_the_headline_score(rendered):
 def test_the_correlation_caveat_is_not_present(rendered):
     html = rendered(**OPEN, live=(150.0, 148.0, 152.0))
     assert "Not six independent reads" not in html
+
+
+def test_reload_url_preserves_positions():
+    import rendering
+    html = rendering.HTML.safe_substitute(
+        name="TEST", mkt_label="", reload_cls="", dot_color="", dot_anim="",
+        ph="", pl="", pc="", price="", px_cls="", chg_html="", pp="", r1="", r2="",
+        s1="", s2="", s1_pct="", r1_pct="", px_pct="", wpp="", returns_html="",
+        rng_pct="", bias_label="", bias_cls="", bias_n="", bias_caution="",
+        bias_chips="", day_range_html="", data_banner="", pos_card="", ma_v="",
+        ma_cls="", ma_s="", rsi_v="", rsi_cls="", rsi_s="", macd_v="", macd_cls="",
+        macd_s="", st_v="", st_cls="", st_stop="", atr_v="", atr_pct="", vol_v="",
+        vol_cls="", vol_s="", read="",
+        reload_url="?ticker=RELIANCE.NS&entry=1200&favorites=TCS&positions=RELIANCE:1200:50,TCS:3100:10&reload=1",
+    )
+    assert "&positions=RELIANCE:1200:50,TCS:3100:10" in html
+

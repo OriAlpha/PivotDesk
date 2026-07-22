@@ -395,12 +395,14 @@ def render_error(
     error_msg: str,
     entry: float = 0.0,
     favorites_str: str = "",
+    positions_str: str = "",
 ) -> None:
     """Render a minimal error page inside an iframe."""
     favs_qp = f"&favorites={favorites_str}" if favorites_str else ""
+    pos_qp = f"&positions={positions_str}" if positions_str else ""
     html = HTML_ERROR.safe_substitute(
         error_msg=error_msg,
-        reload_url=f"?ticker={ticker}&entry={entry}{favs_qp}&reload=1",
+        reload_url=f"?ticker={ticker}&entry={entry}{favs_qp}{pos_qp}&reload=1",
     )
     st.iframe(html, height=350)
 
@@ -412,6 +414,7 @@ def render(
     reload_cls: str = "",
     favorites_str: str = "",
     qty: float = 0.0,
+    positions_str: str = "",
 ) -> None:
     """Build and display the full dashboard for *ticker*."""
     entry_val = float(entry) if entry is not None else 0.0
@@ -556,11 +559,12 @@ def render(
     )
 
     # ---- final HTML assembly
+    pos_qp = f"&positions={positions_str}" if positions_str else ""
     html = HTML.safe_substitute(
         name=ticker.replace(".NS", "") + " · NSE",
         mkt_label=f"{mkt_label} · STALE" if pv.stale else mkt_label,
         reload_cls=reload_cls,
-        reload_url=f"?ticker={ticker}&entry={entry_val}&favorites={favorites_str}&reload=1",
+        reload_url=f"?ticker={ticker}&entry={entry_val}&favorites={favorites_str}{pos_qp}&reload=1",
         dot_color=(
             "var(--pp)" if pv.stale else ("var(--sup)" if is_open else "var(--dim)")
         ),
