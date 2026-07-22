@@ -103,17 +103,6 @@ BIAS_LABELS: dict[int, tuple[str, str]] = {
     0: ("Strong bearish", "dn"),
 }
 
-# Pairwise agreement measured on the same sample. The signals are not six
-# independent votes: price-vs-SMA20, price-vs-SMA50, Supertrend and MACD agree
-# with each other 76-80% of the time, against a ~50% baseline for independent
-# signals. Price-vs-pivot is the most orthogonal (52-62%) because it re-anchors
-# daily. Shown on the card so the score is not read as six separate reads; the
-# full numbers are in the README.
-SIGNAL_CAVEAT = (
-    "Not six independent reads — the MAs, Supertrend and MACD agree 76–80% of "
-    "the time. Price vs pivot is the most independent."
-)
-
 # Short labels for the per-signal chips, in scoring order.
 SIGNAL_LABELS = ("20D", "50D", "200D", "ST", "MACD", "PIV")
 
@@ -270,7 +259,6 @@ box-shadow:0 0 22px rgba(111,164,255,.6)}
 padding:3px 8px;border-radius:99px;border:1px solid;letter-spacing:.04em;white-space:nowrap}
 .sigchips span.on{color:var(--sup);border-color:rgba(46,230,200,.35);background:rgba(46,230,200,.07)}
 .sigchips span.off{color:var(--res);border-color:rgba(255,107,107,.30);background:rgba(255,107,107,.06)}
-.sigfoot{font-size:10px;color:var(--dim);margin-top:9px;line-height:1.45;font-weight:600}
 .grid{display:grid;grid-template-columns:340px 1fr;gap:16px}
 @media(max-width:760px){.grid{grid-template-columns:1fr}}
 .panelbox{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px 20px}
@@ -346,8 +334,7 @@ $data_banner
 <div class="vcard"><div class="k">Technical bias</div>
 <div class="big $bias_cls">$bias_label</div>
 <div class="sub2">$bias_n/6 signals bullish$bias_caution</div>
-<div class="sigchips">$bias_chips</div>
-<div class="sigfoot">$bias_note</div></div>
+<div class="sigchips">$bias_chips</div></div>
 $pos_card
 </div>
 <div class="grid">
@@ -600,7 +587,6 @@ def render(
         bias_n=str(score),
         bias_caution=bias_caution,
         bias_chips=bias_chips,
-        bias_note=SIGNAL_CAVEAT,
         day_range_html=day_range_html,
         data_banner=(
             '<div class="databanner">⚠ Yahoo data unavailable · showing the last '

@@ -204,6 +204,6 @@ def test_the_chip_count_matches_the_headline_score(rendered):
     assert chips.count('class="on"') == score
 
 
-def test_the_correlation_caveat_is_visible_not_hidden(rendered):
+def test_the_correlation_caveat_is_not_present(rendered):
     html = rendered(**OPEN, live=(150.0, 148.0, 152.0))
-    assert "Not six independent reads" in html
+    assert "Not six independent reads" not in html
