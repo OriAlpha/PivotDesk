@@ -209,6 +209,43 @@ def test_the_correlation_caveat_is_not_present(rendered):
     assert "Not six independent reads" not in html
 
 
+# ---------------------------------------------------------------- action card
+
+
+def test_action_card_renders_without_an_advice_disclaimer(rendered):
+    html = rendered(**OPEN, live=(150.0, 148.0, 152.0))
+    assert 'class="acard' in html
+    assert "not investment advice" not in html
+
+
+def test_action_card_notes_when_the_price_is_stale(rendered):
+    html = rendered(**OPEN, live=None)  # market open but the quote failed
+    assert 'class="acard' in html
+    assert "not live" in html
+
+
+# ---------------------------------------------------------------- plain summary
+
+
+def test_summary_sentence_is_the_action_headline(rendered):
+    html = rendered(**OPEN, live=(150.0, 148.0, 152.0))
+    assert 'class="asum"' in html
+    # It leads with the clean symbol, not the "· NSE" display name.
+    assert "TEST is" in html
+
+
+def test_move_context_shows_next_to_a_real_change(rendered):
+    html = rendered(**OPEN, live=(150.0, 148.0, 152.0))
+    assert 'class="movectx"' in html
+    assert "normal day" in html
+
+
+def test_no_move_context_when_the_price_is_stale(rendered):
+    """A failed quote has no real change, so there is no day to size up."""
+    html = rendered(**OPEN, live=None)
+    assert 'class="movectx"' not in html
+
+
 def test_reload_url_preserves_positions():
     import rendering
     html = rendering.HTML.safe_substitute(
@@ -216,7 +253,8 @@ def test_reload_url_preserves_positions():
         ph="", pl="", pc="", price="", px_cls="", chg_html="", pp="", r1="", r2="",
         s1="", s2="", s1_pct="", r1_pct="", px_pct="", wpp="", returns_html="",
         rng_pct="", bias_label="", bias_cls="", bias_n="", bias_caution="",
-        bias_chips="", day_range_html="", data_banner="", pos_card="", ma_v="",
+        bias_chips="", action_card="", move_ctx="",
+        day_range_html="", data_banner="", pos_card="", ma_v="",
         ma_cls="", ma_s="", rsi_v="", rsi_cls="", rsi_s="", macd_v="", macd_cls="",
         macd_s="", st_v="", st_cls="", st_stop="", atr_v="", atr_pct="", vol_v="",
         vol_cls="", vol_s="", read="",

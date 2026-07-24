@@ -196,6 +196,275 @@ def position_card(
     )
 
 
+# ---------------------------------------------------------------- action verdict
+
+# Thresholds that turn the raw signals into a buy/wait call. Kept as named
+# constants so the judgement calls stay visible and tunable in one place instead
+# of hiding as magic numbers inside the branch conditions.
+OVERBOUGHT_RSI = 70.0  # RSI at/above this is a stretched, chase-prone entry
+EXTENDED_ATR = 2.0  # price this many ATRs above the pivot reads as extended
+EXTENDED_RISK = 8.0  # a stop this far below (%) is a loose, late entry
+SUPPORT_ATR = 0.5  # within this many ATRs of the pivot counts as "at support"
+SUPPORT_RISK = 4.0  # a stop this close (%) means the downside is tightly defined
+MIXED_MAX_SCORE = 2  # trend up but <= this many bullish signals = conflicted
+
+
+@dataclass(frozen=True)
+class Verdict:
+    """A buy/wait read synthesised from signals already on the dashboard.
+
+    A *reading of current conditions*, not a prediction of the low.
+    ``zone_lo``/``zone_hi`` describe a support band worth buying into; both are
+    ``None`` when the trend does not warrant buying at all. ``kind`` selects how
+    the bottom line reads — in the downtrend (``"reclaim"``) case ``stop`` sits
+    *above* the price, a level to reclaim rather than a stop-loss beneath it.
+    """
+
+    label: str
+    css: str  # up | warn | dn — reuses the template's existing colour classes
+    reason: str
+    stop: float
+    risk_pct: float
+    zone_lo: float | None = None
+    zone_hi: float | None = None
+    kind: str = "buy"  # buy | wait | mixed | reclaim — selects the meta line
+
+
+def entry_verdict(
+    price: float,
+    score: int,
+    st_up: bool,
+    st_stop: float,
+    rsi_val: float,
+    atr_val: float,
+    piv: dict[str, float],
+) -> Verdict:
+    """Turn the computed signals into a buy / wait / stand-aside call.
+
+    Two gates, in order:
+
+    1. **Trend** — a down Supertrend, or an up one with the signals still mostly
+       bearish, means there is no trend to ride: wait, whatever the price.
+    2. **Location** — with the trend up, decide whether *this* price is a good
+       entry (near support, tight stop) or a chase (overbought / stretched far
+       above the pivot), and hand back the support band to buy into either way.
+    """
+    risk_pct = (price - st_stop) / price * 100 if price else 0.0
+
+    # -- Gate 1: is there an uptrend to ride at all?
+    if not st_up:
+        return Verdict(
+            label="Don't buy yet",
+            css="dn",
+            reason=(
+                "Trying to buy while it is dropping is risky. Wait until it "
+                f"climbs back above ₹{fmt(st_stop)} — the first sign it is "
+                "turning around."
+            ),
+            stop=st_stop,
+            risk_pct=risk_pct,
+            kind="reclaim",
+        )
+    if score <= MIXED_MAX_SCORE:
+        return Verdict(
+            label="Wait — not clear yet",
+            css="warn",
+            reason=(
+                "Most of the signs still look weak — give them time to line up "
+                "before buying."
+            ),
+            stop=st_stop,
+            risk_pct=risk_pct,
+            kind="mixed",
+        )
+
+    # -- Gate 2: the trend is up; is *this* price a good spot to enter?
+    pp = piv["PP"]
+    ext_atr = (price - pp) / atr_val if atr_val else 0.0
+
+    # The band to buy into: the two nearest support levels below the price.
+    supports = sorted(
+        (lvl for lvl in (pp, piv["S1"], piv["S2"], st_stop) if lvl < price),
+        reverse=True,
+    )
+    if len(supports) >= 2:
+        zone_hi, zone_lo = supports[0], supports[1]
+    elif len(supports) == 1:
+        zone_hi, zone_lo = supports[0], st_stop
+    else:  # price already under every pivot — lean on the trend stop alone
+        zone_hi = zone_lo = st_stop
+
+    overbought = rsi_val >= OVERBOUGHT_RSI
+    extended = ext_atr >= EXTENDED_ATR or risk_pct >= EXTENDED_RISK
+    at_support = ext_atr <= SUPPORT_ATR or risk_pct <= SUPPORT_RISK
+
+    if overbought or extended:
+        if overbought:
+            reason = (
+                "It has shot up fast and looks overheated — buying now means "
+                "paying up. Better to let it cool down toward the buy range "
+                "below."
+            )
+        elif ext_atr >= EXTENDED_ATR:
+            reason = (
+                "It has jumped far above its usual level, fast — buying now is "
+                "chasing it. Better to let it settle back toward the buy range "
+                "below."
+            )
+        else:  # the safety exit is simply too far below the current price
+            reason = (
+                "It is a long way above its safety exit — you would risk about "
+                f"{risk_pct:.0f}% before getting out. Wait for a dip so the exit "
+                "sits closer."
+            )
+        return Verdict(
+            label="Wait for a better price",
+            css="warn",
+            reason=reason,
+            stop=st_stop,
+            risk_pct=risk_pct,
+            zone_lo=zone_lo,
+            zone_hi=zone_hi,
+            kind="wait",
+        )
+    if at_support:
+        return Verdict(
+            label="Good spot to buy",
+            css="up",
+            reason=(
+                "It is sitting close to a level it tends to bounce from, so "
+                f"your exit is near (about {risk_pct:.0f}% away) — if it goes "
+                "wrong, the loss stays small."
+            ),
+            stop=st_stop,
+            risk_pct=risk_pct,
+            zone_lo=zone_lo,
+            zone_hi=zone_hi,
+            kind="buy",
+        )
+    return Verdict(
+        label="OK, but wait for a dip",
+        css="up",
+        reason=(
+            "It is in the middle of its range — not cheap right now. Waiting "
+            "for a small dip toward the buy range below gets you a better price "
+            "and a closer exit."
+        ),
+        stop=st_stop,
+        risk_pct=risk_pct,
+        zone_lo=zone_lo,
+        zone_hi=zone_hi,
+        kind="buy",
+    )
+
+
+def action_card(v: Verdict, summary: str, stale: bool = False) -> str:
+    """Build the Action card: the plain summary sentence leads, then the why
+    and the plan. ``summary`` comes from :func:`plain_summary`, so the headline
+    and the supporting detail always describe the same call."""
+
+    def zone() -> str:
+        return (
+            f"₹{fmt(v.zone_lo)}"
+            if v.zone_lo == v.zone_hi
+            else f"₹{fmt(v.zone_lo)}–₹{fmt(v.zone_hi)}"
+        )
+
+    if v.kind == "reclaim":  # downtrend — the stop sits above, as a turn signal
+        meta = f'<span>Wait for a move back above <b>₹{fmt(v.stop)}</b></span>'
+    elif v.kind == "mixed":  # trend up but unconfirmed — no buy range yet
+        meta = f'<span>If you hold, sell below <b>₹{fmt(v.stop)}</b></span>'
+    elif v.kind == "wait":  # buy range named, plus how far the exit sits right now
+        meta = (
+            f'<span>Better buy <b>{zone()}</b></span>'
+            f'<span>sell below <b>₹{fmt(v.stop)}</b></span>'
+            f'<span>now ~<b>{v.risk_pct:.0f}%</b> above exit</span>'
+        )
+    else:  # "buy" — actionable now, so show what it costs you if it's wrong
+        meta = (
+            f'<span>Buy <b>{zone()}</b></span>'
+            f'<span>sell below <b>₹{fmt(v.stop)}</b></span>'
+            f'<span>risk ~<b>{v.risk_pct:.0f}%</b></span>'
+        )
+
+    emoji = {"up": "🟢", "warn": "🟡", "dn": "🔴"}[v.css]
+    # Only a functional note remains — a flag that the read is on a stale price.
+    stale_note = (
+        '<div class="atag">on the last close, not live</div>' if stale else ""
+    )
+    return (
+        f'<div class="acard {v.css}"><div class="k">Action</div>'
+        f'<div class="asum"><span class="em">{emoji}</span>{summary}</div>'
+        f'<div class="ameta">{meta}</div>'
+        f"{stale_note}</div>"
+    )
+
+
+# ---------------------------------------------------------------- plain summary
+
+# The Action label, reworded as a sentence ending so the summary reads naturally.
+SUMMARY_CONCLUSION = {
+    "Good spot to buy": "a lower-risk spot to start buying",
+    "OK, but wait for a dip": "you could buy, but a small dip is a better deal",
+    "Wait for a better price": "better to wait for a dip",
+    "Wait — not clear yet": "better to wait until the signs agree",
+    "Don't buy yet": "best to wait until it turns back up",
+}
+
+
+def plain_summary(
+    name: str, score: int, st_up: bool, rsi_val: float, verdict: Verdict
+) -> str:
+    """One plain sentence describing the whole dashboard: trend, heat, and call.
+
+    Built from the same inputs as the Action card, so the two never disagree.
+    """
+    if not st_up:
+        trend = "is falling right now"
+    elif score >= 5:
+        trend = "is rising strongly"
+    elif score == 4:
+        trend = "is rising"
+    elif score == 3:
+        trend = "is edging higher"
+    else:
+        trend = "is just starting to turn up"
+
+    if rsi_val >= OVERBOUGHT_RSI:
+        heat = " but looks hot (it has risen fast)"
+    elif rsi_val <= 30:
+        heat = " and looks beaten-down (it has fallen hard)"
+    else:
+        heat = ""
+
+    conclusion = SUMMARY_CONCLUSION.get(verdict.label, verdict.label)
+    return f"{name} {trend}{heat} — {conclusion}."
+
+
+def move_context(chg_pct: float, atr_pct: float) -> str:
+    """A plain read of today's move next to this stock's usual day, or ''.
+
+    ``atr_pct`` is the stock's average daily range as a percentage — its
+    "normal day" — so the ratio says whether today is calm, normal, or wild
+    *for this particular stock* rather than by an absolute yardstick.
+    """
+    if atr_pct <= 0:
+        return ""
+    ratio = abs(chg_pct) / atr_pct
+    if ratio < 0.6:
+        phrase = "smaller than a normal day"
+    elif ratio < 1.4:
+        phrase = "about a normal day"
+    elif ratio < 2.2:
+        phrase = "bigger than a normal day"
+    else:
+        phrase = "much bigger than a normal day"
+    return (
+        f'<div class="movectx">Today the move is {phrase} '
+        f"<b>(usual &asymp; &plusmn;{atr_pct:.1f}%)</b></div>"
+    )
+
+
 # ---------------------------------------------------------------- html templates
 
 HTML = Template(
@@ -207,8 +476,7 @@ HTML = Template(
 :root{--bg:#0A0E17;--panel:rgba(20,29,48,.72);--line:#1E2C48;--text:#EDF2FB;--muted:#7E8DA8;
 --dim:#55637E;--pp:#FFC53D;--res:#FF6B6B;--sup:#2EE6C8;--price:#6FA4FF}
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:radial-gradient(900px 420px at 15% -8%,rgba(46,230,200,.06),transparent 60%),
-radial-gradient(900px 420px at 85% -8%,rgba(255,107,107,.06),transparent 60%),var(--bg);
+body{background:var(--bg);
 color:var(--text);font-family:'Archivo',sans-serif}
 .mono{font-family:'IBM Plex Mono',monospace}
 .wrap{max-width:940px;margin:0 auto;padding:10px 16px 28px}
@@ -259,6 +527,18 @@ box-shadow:0 0 22px rgba(111,164,255,.6)}
 padding:3px 8px;border-radius:99px;border:1px solid;letter-spacing:.04em;white-space:nowrap}
 .sigchips span.on{color:var(--sup);border-color:rgba(46,230,200,.35);background:rgba(46,230,200,.07)}
 .sigchips span.off{color:var(--res);border-color:rgba(255,107,107,.30);background:rgba(255,107,107,.06)}
+.acard{border:1px solid var(--line);border-radius:16px;padding:16px 22px;text-align:center;margin-bottom:16px;background:var(--panel)}
+.acard.up{border-color:rgba(46,230,200,.4);background:linear-gradient(180deg,rgba(46,230,200,.05),transparent 62%),var(--panel)}
+.acard.warn{border-color:rgba(255,197,61,.4);background:linear-gradient(180deg,rgba(255,197,61,.05),transparent 62%),var(--panel)}
+.acard.dn{border-color:rgba(255,107,107,.4);background:linear-gradient(180deg,rgba(255,107,107,.05),transparent 62%),var(--panel)}
+.acard .k{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--dim);font-weight:800;margin-bottom:6px}
+.asum{font-size:17.5px;font-weight:800;line-height:1.4;color:var(--text);max-width:640px;margin:0 auto}
+.asum .em{margin-right:8px}
+.ameta{display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-top:14px;font-size:12px;color:var(--muted);font-family:'IBM Plex Mono',monospace}
+.ameta b{color:var(--text);font-weight:600}
+.atag{margin-top:11px;font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);font-weight:700}
+.movectx{font-size:11.5px;color:var(--dim);margin-top:7px;font-weight:600}
+.movectx b{color:var(--muted);font-weight:700}
 .grid{display:grid;grid-template-columns:340px 1fr;gap:16px}
 @media(max-width:760px){.grid{grid-template-columns:1fr}}
 .panelbox{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px 20px}
@@ -316,6 +596,7 @@ font-size:11.5px;font-weight:800;letter-spacing:.05em}
 <div class="sub mono">Prev: H $ph · L $pl · C $pc</div>
 <div class="px mono $px_cls">₹$price</div>
 $chg_html
+$move_ctx
 $day_range_html
 </div>
 $data_banner
@@ -330,6 +611,7 @@ $data_banner
 </div>
 <div class="returns">$returns_html
 <span class="ret"><span>52W</span><b class="mono" style="color:var(--pp)">$rng_pct% of range</b></span></div>
+$action_card
 <div class="verdict">
 <div class="vcard"><div class="k">Technical bias</div>
 <div class="big $bias_cls">$bias_label</div>
@@ -478,6 +760,7 @@ def render(
     """
 
     # ---- change block (never fabricate a +0.00 for a price we could not fetch)
+    move_ctx_html = ""
     if pv.stale:
         chg_html = (
             '<div class="chg stale">⚠ Live price unavailable · '
@@ -490,6 +773,9 @@ def render(
             f'<div class="chg mono" '
             f'style="color:{"var(--sup)" if chg >= 0 else "var(--res)"}">'
             f'{"▲" if chg >= 0 else "▼"} {chg:+,.2f} ({chg_pct:+.2f}%)</div>'
+        )
+        move_ctx_html = move_context(
+            chg_pct, ind.atr_val / price * 100 if price else 0.0
         )
 
     # ---- moving-average classification (depends on live price)
@@ -558,6 +844,16 @@ def render(
         ]
     )
 
+    # ---- action verdict (headline buy/wait call, synthesised from the signals)
+    verdict = entry_verdict(
+        price, score, ind.st_up, ind.st_stop, ind.rsi_val, ind.atr_val, piv
+    )
+
+    # ---- plain-English summary sentence (the Action card's headline)
+    summary_sentence = plain_summary(
+        ticker.replace(".NS", ""), score, ind.st_up, ind.rsi_val, verdict
+    )
+
     # ---- final HTML assembly
     pos_qp = f"&positions={positions_str}" if positions_str else ""
     html = HTML.safe_substitute(
@@ -591,6 +887,8 @@ def render(
         bias_n=str(score),
         bias_caution=bias_caution,
         bias_chips=bias_chips,
+        action_card=action_card(verdict, summary_sentence, stale=pv.stale),
+        move_ctx=move_ctx_html,
         day_range_html=day_range_html,
         data_banner=(
             '<div class="databanner">⚠ Yahoo data unavailable · showing the last '

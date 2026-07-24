@@ -3,3 +3,6 @@ __pycache__/
 *.pyc
 .pytest_cache/
 graphify-out/
+
+# personal notes / local reference — not tracked
+pivotdesk-guide.md

@@ -5,11 +5,19 @@ from __future__ import annotations
 import pytest
 
 from rendering import (
+    action_card,
+    entry_verdict,
+    move_context,
+    plain_summary,
     position_card,
     resolve_price,
     signal_chips,
     technical_score,
 )
+
+
+def _piv(pp, s1, s2, r1, r2):
+    return {"PP": pp, "S1": s1, "S2": s2, "R1": r1, "R2": r2}
 
 # Last completed session, and the one before it.
 PREV_CLOSE, PREV_LOW, PREV_HIGH = 145.0, 143.0, 147.0
@@ -186,3 +194,179 @@ def test_position_card_reports_rupees_when_given_a_quantity():
 def test_position_card_falls_back_to_per_share_without_a_quantity():
     assert "/sh" in position_card(100.0, 110.0, True, 95.0)
     assert "/sh" in position_card(100.0, 110.0, True, 95.0, qty=0)
+
+
+# ---------------------------------------------------------------- entry verdict
+
+
+def test_downtrend_stands_aside_whatever_the_price():
+    """Gate 1: a broken trend is a wait, however cheap the price looks."""
+    v = entry_verdict(100.0, 1, False, 104.0, 40.0, 2.0, _piv(101, 98, 94, 106, 110))
+    assert v.label == "Don't buy yet"
+    assert v.css == "dn"
+    assert v.kind == "reclaim"
+    # No buy range is offered when there is no trend to buy into.
+    assert v.zone_lo is None and v.zone_hi is None
+
+
+def test_uptrend_with_bearish_signals_waits_for_confirmation():
+    v = entry_verdict(100.0, 2, True, 97.0, 45.0, 2.0, _piv(101, 98, 94, 106, 110))
+    assert v.label == "Wait — not clear yet"
+    assert v.css == "warn"
+    assert v.kind == "mixed"
+    assert v.zone_lo is None and v.zone_hi is None
+
+
+def test_near_support_in_an_uptrend_is_a_buy_zone():
+    v = entry_verdict(100.0, 5, True, 97.0, 55.0, 2.0, _piv(99, 96, 92, 103, 107))
+    assert v.label == "Good spot to buy"
+    assert v.css == "up"
+    # The band is real support below the price, low first.
+    assert v.zone_lo <= v.zone_hi < 100.0
+    assert v.risk_pct == pytest.approx(3.0)
+
+
+def test_overbought_uptrend_waits_for_a_better_price():
+    v = entry_verdict(100.0, 5, True, 97.0, 75.0, 2.0, _piv(99, 96, 92, 103, 107))
+    assert v.label == "Wait for a better price"
+    assert v.css == "warn"
+    assert "overheated" in v.reason  # reason matches the real trigger
+    # Even when chasing, it still names the range to wait for.
+    assert v.zone_lo is not None and v.zone_hi is not None
+
+
+def test_stretched_far_above_the_pivot_waits_for_a_better_price():
+    """No overbought RSI, but ~5 ATR above the pivot is still a chase."""
+    v = entry_verdict(110.0, 5, True, 96.0, 55.0, 2.0, _piv(100, 97, 93, 113, 117))
+    assert v.label == "Wait for a better price"
+    assert "jumped far" in v.reason
+
+
+def test_far_from_the_exit_reads_as_risky_not_stretched():
+    """Regression: an entry only ~0.3 ATR above the pivot still tripped the wait,
+    because the stop was >8% away — but the reason wrongly said 'stretched'.
+    The wording must describe the exit distance, not a run-up that did not happen."""
+    v = entry_verdict(100.0, 5, True, 90.0, 55.0, 2.0, _piv(99.4, 96, 92, 103, 107))
+    assert v.label == "Wait for a better price"
+    assert "safety exit" in v.reason
+    assert "jumped" not in v.reason and "overheated" not in v.reason
+
+
+def test_midrange_uptrend_accumulates_on_dips():
+    v = entry_verdict(103.0, 5, True, 97.0, 60.0, 2.0, _piv(100, 98, 94, 106, 110))
+    assert v.label == "OK, but wait for a dip"
+    assert v.css == "up"
+
+
+def test_verdict_zone_bounds_sit_below_the_price():
+    v = entry_verdict(100.0, 5, True, 97.0, 55.0, 2.0, _piv(99, 96, 92, 103, 107))
+    assert v.zone_hi < 100.0
+    assert v.zone_lo <= v.zone_hi
+
+
+# ---------------------------------------------------------------- action card
+
+
+def _buy_zone():
+    return entry_verdict(100.0, 5, True, 97.0, 55.0, 2.0, _piv(99, 96, 92, 103, 107))
+
+
+_SUMMARY = "RELIANCE is rising strongly — a lower-risk spot to start buying."
+
+
+def test_action_card_leads_with_the_summary_sentence():
+    html = action_card(_buy_zone(), _SUMMARY)
+    assert _SUMMARY in html  # the sentence is the headline, not a separate label
+    assert 'class="asum"' in html
+    assert 'class="acard up"' in html
+    assert "Buy" in html and "sell below" in html and "risk ~" in html
+
+
+def test_action_card_has_no_advice_disclaimer():
+    assert "not investment advice" not in action_card(_buy_zone(), _SUMMARY)
+
+
+def test_action_card_marks_a_stale_price():
+    fresh = action_card(_buy_zone(), _SUMMARY)
+    stale = action_card(_buy_zone(), _SUMMARY, stale=True)
+    assert "not live" not in fresh
+    assert "not live" in stale
+
+
+def test_action_card_shows_how_far_the_exit_sits_when_waiting():
+    # price 110, stop 96 → (110-96)/110 ≈ 12.7% → "~13% above exit".
+    v = entry_verdict(110.0, 5, True, 96.0, 55.0, 2.0, _piv(100, 97, 93, 113, 117))
+    assert v.kind == "wait"
+    html = action_card(v, "X is rising strongly — better to wait for a dip.")
+    assert "above exit" in html
+    assert "13%" in html
+
+
+def test_action_card_for_a_downtrend_offers_a_reclaim_not_an_entry_zone():
+    v = entry_verdict(100.0, 1, False, 104.0, 40.0, 2.0, _piv(101, 98, 94, 106, 110))
+    html = action_card(v, "INFY is falling right now — best to wait until it turns back up.")
+    assert "falling right now" in html
+    assert 'class="acard dn"' in html
+    assert "move back above" in html
+    assert "sell below" not in html  # nothing to buy, so no buy-range line
+
+
+# ---------------------------------------------------------------- plain summary
+
+
+def _buy_verdict():
+    return entry_verdict(100.0, 5, True, 97.0, 55.0, 2.0, _piv(99, 96, 92, 103, 107))
+
+
+def test_summary_names_the_stock_and_ends_with_the_call():
+    s = plain_summary("RELIANCE", 5, True, 55.0, _buy_verdict())
+    assert s.startswith("RELIANCE ")
+    assert "rising" in s
+    assert s.endswith("buying.")
+
+
+def test_summary_flags_a_hot_stock():
+    hot = entry_verdict(100.0, 5, True, 97.0, 75.0, 2.0, _piv(99, 96, 92, 103, 107))
+    s = plain_summary("TCS", 5, True, 75.0, hot)
+    assert "hot" in s
+    assert "wait" in s
+
+
+def test_summary_for_a_downtrend_says_falling_and_wait():
+    dn = entry_verdict(100.0, 1, False, 104.0, 40.0, 2.0, _piv(101, 98, 94, 106, 110))
+    s = plain_summary("INFY", 1, False, 40.0, dn)
+    assert "falling" in s
+    assert "turns back up" in s
+
+
+def test_summary_never_contradicts_the_verdict():
+    """The summary and the Action card come from the same inputs, so a 'buy'
+    verdict must not produce a 'wait' sentence, or vice versa."""
+    v = _buy_verdict()
+    assert "wait" not in plain_summary("X", 5, True, 55.0, v).lower()
+
+
+# ---------------------------------------------------------------- move context
+
+
+@pytest.mark.parametrize(
+    "chg,phrase",
+    [
+        (0.4, "smaller than a normal day"),
+        (2.0, "about a normal day"),
+        (3.5, "bigger than a normal day"),
+        (6.0, "much bigger than a normal day"),
+    ],
+)
+def test_move_context_scales_to_the_stocks_own_normal_day(chg, phrase):
+    # A 2%/day stock: the same ₹ move reads differently than for a calm stock.
+    assert phrase in move_context(chg, 2.0)
+
+
+def test_move_context_is_blank_without_a_usable_daily_range():
+    assert move_context(1.5, 0.0) == ""
+
+
+def test_move_context_is_direction_agnostic():
+    """A 3% drop is as big a day as a 3% rise."""
+    assert move_context(-3.5, 2.0) == move_context(3.5, 2.0)
