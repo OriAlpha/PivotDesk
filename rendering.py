@@ -18,10 +18,10 @@ from dataclasses import dataclass
 import streamlit as st
 
 from backtest import signal_confidence
+from chart import render_chart_html
 from config import IST
 from data import (
     completed_sessions,
-    fetch_benchmark,
     fetch_daily_resilient,
     fetch_live_price,
     is_holiday,
@@ -250,15 +250,13 @@ def render_error(
     ticker: str,
     error_msg: str,
     entry: float = 0.0,
-    favorites_str: str = "",
     positions_str: str = "",
 ) -> None:
     """Render a minimal error page inside an iframe."""
-    favs_qp = f"&favorites={favorites_str}" if favorites_str else ""
     pos_qp = f"&positions={positions_str}" if positions_str else ""
     html = HTML_ERROR.safe_substitute(
         error_msg=error_msg,
-        reload_url=f"?ticker={ticker}&entry={entry}{favs_qp}{pos_qp}&reload=1",
+        reload_url=f"?ticker={ticker}&entry={entry}{pos_qp}&reload=1",
     )
     st.iframe(html, height=350)
 
@@ -268,7 +266,6 @@ def render(
     entry: float = 0.0,
     now: dt.datetime | None = None,
     reload_cls: str = "",
-    favorites_str: str = "",
     qty: float = 0.0,
     positions_str: str = "",
     risk_budget: float = 0.0,
@@ -386,37 +383,6 @@ def render(
                 f'<b class="mono" style="color:{color}">{r:+.1f}%</b></span>'
             )
 
-    # ---- benchmark: relative out/under-performance vs NIFTY 50, shown only
-    # for periods where the two actually differ. A failed benchmark fetch is
-    # invisible rather than fatal — it is a secondary read.
-    benchmark_html = ""
-    bench = fetch_benchmark()
-    if bench is not None and len(bench) > 1:
-        bench_close = (
-            bench["Adj Close"] if "Adj Close" in bench.columns else bench["Close"]
-        )
-        rels: list[str] = []
-        for lab, n in (("1W", 5), ("1M", 21), ("3M", 63), ("6M", 126), ("1Y", 252)):
-            if len(bench_close) <= n:
-                continue
-            stock_ret = next((r for lab2, r in ind.returns if lab2 == lab), None)
-            if stock_ret is None:
-                continue
-            bench_ret = float(bench_close.iloc[-1] / bench_close.iloc[-1 - n] - 1) * 100
-            rel = stock_ret - bench_ret
-            if abs(rel) < 0.05:  # rounding: a tenth of a point is noise
-                continue
-            color = "var(--sup)" if rel >= 0 else "var(--res)"
-            rels.append(
-                f'<span class="mono" style="color:{color}">{lab} {rel:+.1f}pp</span>'
-            )
-        if rels:
-            benchmark_html = (
-                '<div class="bench">vs NIFTY 50 &middot; '
-                + " &middot; ".join(rels)
-                + "</div>"
-            )
-
     # ---- spectrum tick positions
     span = piv["R2"] - piv["S2"]
 
@@ -476,7 +442,7 @@ def render(
         name=ticker.replace(".NS", "") + " · NSE",
         mkt_label=f"{mkt_label} · STALE" if pv.stale else mkt_label,
         reload_cls=reload_cls,
-        reload_url=f"?ticker={ticker}&entry={entry_val}&favorites={favorites_str}{pos_qp}&reload=1",
+        reload_url=f"?ticker={ticker}&entry={entry_val}{pos_qp}&reload=1",
         dot_color=(
             "var(--pp)" if pv.stale else ("var(--sup)" if is_open else "var(--dim)")
         ),
@@ -497,7 +463,6 @@ def render(
         px_pct=f"{pivot_pct(price):.1f}",
         wpp=fmt(ind.weekly_pp),
         returns_html="".join(rets),
-        benchmark_html=benchmark_html,
         rng_pct=f"{rng_pct:.0f}",
         bias_label=bias_label,
         bias_cls=bias_cls,
@@ -546,6 +511,7 @@ def render(
             if ind.vol_ratio < 0.8
             else ("above average" if ind.vol_ratio > 1.2 else "in line")
         ),
+        chart_html=render_chart_html(daily, piv, st_stop=ind.st_stop),
         read=compose_read(),
     )
     st.iframe(html, height="content")
