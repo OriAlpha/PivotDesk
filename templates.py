@@ -61,8 +61,6 @@ box-shadow:0 0 22px rgba(111,164,255,.6)}
 .returns{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:30px}
 .ret{background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:7px 15px;font-size:12.5px}
 .ret span{color:var(--dim);font-weight:800;margin-right:7px}
-.bench{margin-top:10px;text-align:center;font-size:11px;color:var(--dim);font-weight:600;letter-spacing:.02em}
-.bench .mono{font-weight:700;margin:0 2px}
 .verdict{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
 @media(max-width:760px){.verdict{grid-template-columns:1fr}}
 .vcard{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px 20px;text-align:center}
@@ -160,7 +158,6 @@ $data_banner
 </div>
 <div class="returns">$returns_html
 <span class="ret"><span>52W</span><b class="mono" style="color:var(--pp)">$rng_pct% of range</b></span></div>
-$benchmark_html
 $action_card
 <div class="verdict">
 <div class="vcard"><div class="k">Technical bias</div>
@@ -183,7 +180,9 @@ $pos_card
 <div class="sc"><div class="k">Supertrend</div><div class="v $st_cls">$st_v</div><div class="s">stop ₹$st_stop</div></div>
 <div class="sc"><div class="k">ATR 14</div><div class="v mono">₹$atr_v</div><div class="s">≈$atr_pct% per day</div></div>
 <div class="sc"><div class="k">Vol vs 30D</div><div class="v $vol_cls">$vol_v×</div><div class="s">$vol_s</div></div>
-</div><div class="read">$read</div></div></div>
+</div></div></div>
+$chart_html
+<div class="read">$read</div>
 </div></body></html>"""
 )
 

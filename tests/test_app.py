@@ -14,9 +14,9 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 import rendering
+from state import AppState, save_state
 
 APP = str(Path(__file__).resolve().parent.parent / "app.py")
-FAVOURITES = ["BHAGYANGR", "RELIANCE", "TCS", "INFY", "TATASTEEL"]
 
 
 def _history(periods: int = 300) -> pd.DataFrame:
@@ -36,21 +36,18 @@ def _history(periods: int = 300) -> pd.DataFrame:
     )
 
 
-def _fresh(monkeypatch, **query_params):
+def _fresh(monkeypatch, tmp_path=None, **query_params):
     """Boot the app with the data layer patched out and a given URL."""
     monkeypatch.setattr(
         rendering, "fetch_daily_resilient", lambda _t: (_history(), False)
     )
     monkeypatch.setattr(rendering, "fetch_live_price", lambda _t: (150.0, 148.0, 152.0))
-    monkeypatch.setattr(rendering, "fetch_benchmark", lambda: None)
-    # The portfolio rollup fetches through its own module namespace; patch it
-    # there too so an expanded Portfolio panel never reaches the network.
-    import portfolio
+    if tmp_path is not None:
+        state_file = tmp_path / "pivotdesk_state.json"
+        import state
 
-    monkeypatch.setattr(
-        portfolio, "fetch_daily_resilient", lambda _t: (_history(), False)
-    )
-    monkeypatch.setattr(portfolio, "fetch_live_price", lambda _t: (150.0, 148.0, 152.0))
+        monkeypatch.setattr(state, "STATE_FILE", state_file)
+
     at = AppTest.from_file(APP, default_timeout=60)
     for key, value in query_params.items():
         at.query_params[key] = value
@@ -59,15 +56,16 @@ def _fresh(monkeypatch, **query_params):
 
 
 @pytest.fixture
-def app(monkeypatch):
-    return _fresh(monkeypatch)
+def app(monkeypatch, tmp_path):
+    return _fresh(monkeypatch, tmp_path=tmp_path)
 
 
 @pytest.fixture
-def book_app(monkeypatch):
+def book_app(monkeypatch, tmp_path):
     """Booted holding two positions, viewing the first."""
     return _fresh(
         monkeypatch,
+        tmp_path=tmp_path,
         ticker="RELIANCE.NS",
         positions="RELIANCE:1200:50,TCS:3100.5:10",
     )
@@ -99,116 +97,79 @@ def test_app_runs_without_error(app):
 def test_core_inputs_are_always_present(app):
     assert [i.label for i in app.text_input] == ["NSE ticker"]
     assert [i.label for i in app.number_input] == [
-        "Your buy price ₹ (optional)",
-        "Qty (optional)",
-        "Risk ₹ (optional)",
+        "Buy price ₹ *",
+        "Qty *",
+        "Risk ₹ *",
     ]
-
-
-# ---------------------------------------------------------------- quick list
-
-
-def test_quick_list_is_collapsed_by_default(app):
-    assert "Quick list ▾" in labels(app)
-    assert not set(FAVOURITES) & set(labels(app))
-
-
-def test_toggling_reveals_the_symbols(app):
-    click(app, "Quick list ▾")
-    assert set(FAVOURITES) <= set(labels(app))
-    assert "Quick list ▴" in labels(app)
-
-
-def test_toggling_again_hides_them(app):
-    click(app, "Quick list ▾")
-    click(app, "Quick list ▴")
-    assert not set(FAVOURITES) & set(labels(app))
-    assert "Quick list ▾" in labels(app)
-
-
-def test_editor_is_hidden_until_asked_for(app):
-    click(app, "Quick list ▾")
-    assert len(app.text_input) == 1  # ticker only
-    click(app, "✏️")
-    assert any("Edit favorites" in i.label for i in app.text_input)
-
-
-def test_collapsing_closes_the_editor_beneath_it(app):
-    click(app, "Quick list ▾")
-    click(app, "✏️")
-    click(app, "Quick list ▴")  # collapse
-    click(app, "Quick list ▾")  # and reopen
-    assert not any("Edit favorites" in i.label for i in app.text_input)
-
-
-def test_picking_a_symbol_loads_it(app):
-    click(app, "Quick list ▾")
-    click(app, "TCS")
-    assert query_param(app, "ticker") == "TCS.NS"
 
 
 # ---------------------------------------------------------------- positions
 
 
 def entry_input(at):
-    return next(i for i in at.number_input if i.label.startswith("Your buy price"))
+    return next(i for i in at.number_input if i.label.startswith("Buy price"))
 
 
 def qty_input(at):
     return next(i for i in at.number_input if i.label.startswith("Qty"))
 
 
+def ticker_input(at):
+    return next(i for i in at.text_input if i.label == "NSE ticker")
+
+
 def test_editing_the_position_writes_it_to_the_url(app):
     entry_input(app).set_value(1200.0).run()
     qty_input(app).set_value(50.0).run()
-    assert query_param(app, "positions") == "BHAGYANGR:1200:50"
+    assert query_param(app, "positions") == "RELIANCE:1200:50"
 
 
 def test_each_symbol_keeps_its_own_position(book_app):
-    """Switching symbols must load that symbol's cost basis, not clear it and
-    not carry the previous one over."""
+    """Switching symbols loads that symbol's cost basis."""
     assert entry_input(book_app).value == 1200.0
     assert qty_input(book_app).value == 50.0
 
-    click(book_app, "Quick list ▾")
-    click(book_app, "TCS")
+    ticker_input(book_app).set_value("TCS.NS").run()
     assert entry_input(book_app).value == 3100.5
     assert qty_input(book_app).value == 10.0
 
 
 def test_a_symbol_without_a_position_starts_empty(book_app):
-    click(book_app, "Quick list ▾")
-    click(book_app, "INFY")  # not in the book
+    ticker_input(book_app).set_value("INFY.NS").run()
     assert entry_input(book_app).value is None
     assert qty_input(book_app).value is None
 
 
 def test_switching_away_and_back_restores_the_position(book_app):
-    click(book_app, "Quick list ▾")
-    click(book_app, "INFY")
-    click(book_app, "RELIANCE")
+    ticker_input(book_app).set_value("INFY.NS").run()
+    ticker_input(book_app).set_value("RELIANCE.NS").run()
     assert entry_input(book_app).value == 1200.0
     assert qty_input(book_app).value == 50.0
 
 
-def test_legacy_entry_and_qty_urls_are_migrated(monkeypatch):
+def test_legacy_entry_and_qty_urls_are_migrated(monkeypatch, tmp_path):
     """Bookmarks made before the book existed must keep their cost basis."""
-    at = _fresh(monkeypatch, ticker="RELIANCE.NS", entry="1200.0", qty="50")
+    at = _fresh(
+        monkeypatch, tmp_path=tmp_path, ticker="RELIANCE.NS", entry="1200.0", qty="50"
+    )
     assert query_param(at, "positions") == "RELIANCE:1200:50"
     assert "entry" not in at.query_params
     assert "qty" not in at.query_params
     assert entry_input(at).value == 1200.0
 
 
-def test_a_junk_positions_url_does_not_break_the_page(monkeypatch):
-    at = _fresh(monkeypatch, ticker="RELIANCE.NS", positions="!!!:::,,,")
+def test_a_junk_positions_url_does_not_break_the_page(monkeypatch, tmp_path):
+    at = _fresh(
+        monkeypatch, tmp_path=tmp_path, ticker="RELIANCE.NS", positions="!!!:::,,,"
+    )
     assert not at.exception
     assert entry_input(at).value is None
 
 
-def test_reload_param_clears_cache_and_restores_params(monkeypatch):
+def test_reload_param_clears_cache_and_restores_params(monkeypatch, tmp_path):
     at = _fresh(
         monkeypatch,
+        tmp_path=tmp_path,
         ticker="RELIANCE.NS",
         reload="1",
         positions="RELIANCE:1200:50,TCS:3100.5:10",
@@ -219,56 +180,28 @@ def test_reload_param_clears_cache_and_restores_params(monkeypatch):
     assert query_param(at, "positions") == "RELIANCE:1200:50,TCS:3100.5:10"
 
 
-def test_risk_budget_round_trips_through_the_url(monkeypatch):
-    at = _fresh(monkeypatch, ticker="RELIANCE.NS", risk="5000")
+def test_risk_budget_round_trips_through_the_url(monkeypatch, tmp_path):
+    at = _fresh(monkeypatch, tmp_path=tmp_path, ticker="RELIANCE.NS", risk="5000")
     assert not at.exception
     assert query_param(at, "risk") == "5000"
-    # The widget reflects the URL value, not a stale default.
     risk_input = next(i for i in at.number_input if i.label.startswith("Risk"))
     assert risk_input.value == 5000.0
 
 
-def test_clearing_the_risk_budget_removes_it_from_the_url(monkeypatch):
-    """An empty budget must not leave a dead ?risk= in the bookmark."""
-    at = _fresh(monkeypatch, ticker="RELIANCE.NS")
-    assert not at.exception
-    assert "risk" not in at.query_params
+# ---------------------------------------------------------------- state persistence
 
 
-# ---------------------------------------------------------------- portfolio rollup
-
-
-def test_portfolio_toggle_is_collapsed_by_default(app):
-    assert "Portfolio ▾" in labels(app)
-    assert "Portfolio ▴" not in labels(app)
-
-
-def test_expanding_the_portfolio_panel_shows_the_symbols(app):
-    click(app, "Portfolio ▾")
-    # The default favorites appear as one button per symbol.
-    assert set(FAVOURITES) <= set(labels(app))
-
-
-def test_clicking_a_portfolio_symbol_loads_its_dashboard(app):
-    click(app, "Portfolio ▾")
-    click(app, "TCS")
-    assert query_param(app, "ticker") == "TCS.NS"
-
-
-def test_held_positions_lead_the_portfolio_list(monkeypatch):
-    """Held symbols come first in the rollup — the things you own lead the
-    one-glance view."""
-    at = _fresh(
-        monkeypatch,
-        ticker="RELIANCE.NS",
-        positions="RELIANCE:1200:50,TCS:3100:10",
+def test_state_persists_across_reloads(monkeypatch, tmp_path):
+    state_file = tmp_path / "pivotdesk_state.json"
+    save_state(
+        AppState(
+            last_ticker="TCS.NS",
+            risk=7500.0,
+            positions_raw="TCS:3200:15",
+        ),
+        state_file,
     )
-    click(at, "Portfolio ▾")
-    # The first two buttons after the toggle are the held symbols, before the
-    # default favorites that aren't held.
-    sym_buttons = [
-        b.label
-        for b in at.button
-        if b.label in FAVOURITES or b.label in ("RELIANCE", "TCS")
-    ]
-    assert sym_buttons.index("RELIANCE") < sym_buttons.index("INFY")
+    at = _fresh(monkeypatch, tmp_path=tmp_path)
+    assert query_param(at, "ticker") == "TCS.NS"
+    assert query_param(at, "risk") == "7500"
+    assert query_param(at, "positions") == "TCS:3200:15"

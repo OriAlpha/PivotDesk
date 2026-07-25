@@ -61,7 +61,6 @@ def rendered(monkeypatch):
         entry=0.0,
         qty=0.0,
         daily_stale=False,
-        benchmark=None,
     ):
         captured: dict[str, str] = {}
         monkeypatch.setattr(
@@ -73,7 +72,6 @@ def rendered(monkeypatch):
             lambda _t: (history(data_through), daily_stale),
         )
         monkeypatch.setattr(rendering, "fetch_live_price", lambda _t: live)
-        monkeypatch.setattr(rendering, "fetch_benchmark", lambda: benchmark)
         rendering.render("TEST.NS", entry, now=now, qty=qty)
         return captured["html"]
 
@@ -287,7 +285,6 @@ def test_reload_url_preserves_positions():
         px_pct="",
         wpp="",
         returns_html="",
-        benchmark_html="",
         rng_pct="",
         bias_label="",
         bias_cls="",
@@ -317,8 +314,9 @@ def test_reload_url_preserves_positions():
         vol_v="",
         vol_cls="",
         vol_s="",
+        chart_html="",
         read="",
-        reload_url="?ticker=RELIANCE.NS&entry=1200&favorites=TCS&positions=RELIANCE:1200:50,TCS:3100:10&reload=1",
+        reload_url="?ticker=RELIANCE.NS&entry=1200&positions=RELIANCE:1200:50,TCS:3100:10&reload=1",
     )
     assert "&positions=RELIANCE:1200:50,TCS:3100:10" in html
 
@@ -326,26 +324,10 @@ def test_reload_url_preserves_positions():
 # ---------------------------------------------------------------- benchmark
 
 
-def test_a_failed_benchmark_fetch_is_invisible(rendered):
-    """The default fixture returns None for the benchmark; the page must render
-    without the vs-NIFTY line and without any leftover placeholder."""
+def test_vs_nifty_benchmark_line_is_removed(rendered):
+    """The page must render without any vs-NIFTY benchmark line."""
     html = rendered(**OPEN, live=(150.0, 148.0, 152.0))
     assert "vs NIFTY" not in html
-    assert "$benchmark_html" not in html
-
-
-def test_benchmark_shows_relative_outperformance(rendered):
-    """Stock +10% over 1M vs NIFTY flat → a green '+10.0pp' under the row."""
-    # Stock history ends ~130ish; freeze NIFTY flat near the same level so the
-    # 1M window shows a clean relative gap.
-    bench = history(TUE).copy()
-    flat = bench["Close"].iloc[-1]
-    bench["Close"] = flat
-    bench["Adj Close"] = flat
-    html = rendered(**OPEN, live=(150.0, 148.0, 152.0), benchmark=bench)
-    assert "vs NIFTY 50" in html
-    # A positive relative read is green.
-    assert "var(--sup)" in html.split("vs NIFTY")[1]
 
 
 # ---------------------------------------------------------------- confidence
