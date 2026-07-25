@@ -63,7 +63,7 @@ __all__ = [
 
 def compose_read() -> str:
     """Data attribution footer."""
-    return "Data: Yahoo Finance &middot; levels roll each NSE session"
+    return "Data: Yahoo Finance"
 
 
 # ---------------------------------------------------------------- price view
@@ -515,7 +515,7 @@ def render(
             if ind.vol_ratio < 0.8
             else ("above average" if ind.vol_ratio > 1.2 else "in line")
         ),
-        chart_html=render_chart_html(daily, piv, st_stop=ind.st_stop),
+        chart_html=render_chart_html(daily, piv, st_stop=ind.st_stop, ticker=ticker),
         read=compose_read(),
         visit_count=f"{total_visits:,}",
         device_count=str(device_count),

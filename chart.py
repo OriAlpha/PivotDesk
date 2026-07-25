@@ -16,6 +16,7 @@ def render_chart_html(
     piv: dict[str, float],
     st_stop: float | None = None,
     sessions: int = 252,
+    ticker: str = "",
 ) -> str:
     """Return HTML/JS snippet embedding a TradingView Lightweight Chart."""
     if daily is None or daily.empty:
@@ -69,17 +70,20 @@ def render_chart_html(
     candles_json = json.dumps(candles)
     volume_json = json.dumps(volume)
     levels_json = json.dumps([lvl for lvl in levels if lvl["price"] is not None])
+    clean_ticker = (ticker or "").strip().upper()
 
     return f"""
-<div class="panelbox" style="margin-top:20px;padding:16px 20px;">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
-    <h3 style="margin-bottom:0;">📈 Pivot & Price Action Chart</h3>
-    <div id="chart-legend" style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);">
+<details class="panelbox chart-expander" style="margin-top:20px;padding:0;">
+  <summary style="padding:14px 20px;cursor:pointer;list-style:none;outline:none;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;user-select:none;">
+    <h3 style="margin:0;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--dim);font-weight:800;text-align:center;">PIVOT & PRICE ACTION CHART</h3>
+    <div id="chart-legend" style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);text-align:center;margin-top:4px;">
       Hover over chart to view OHLC & Volume
     </div>
+  </summary>
+  <div style="padding:0 20px 18px 20px;border-top:1px solid var(--line);">
+    <div id="tv-chart" style="width:100%;height:360px;position:relative;background:#0A0E17;border-radius:10px;margin-top:16px;"></div>
   </div>
-  <div id="tv-chart" style="width:100%;height:360px;position:relative;background:#0A0E17;border-radius:10px;"></div>
-</div>
+</details>
 
 <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
 <script>
@@ -93,7 +97,7 @@ def render_chart_html(
     : {{ backgroundColor: '#0A0E17' }};
 
   const chartOpts = Object.assign({{
-    width: container.clientWidth,
+    width: container.clientWidth || 900,
     height: 360,
     grid: {{
       vertLines: {{ color: 'rgba(30, 44, 72, 0.35)' }},
@@ -110,7 +114,8 @@ def render_chart_html(
     }},
     timeScale: {{
       borderColor: '#1E2C48',
-      timeVisible: true,
+      timeVisible: false,
+      secondsVisible: false,
     }},
   }}, layoutBg);
 
@@ -167,9 +172,14 @@ def render_chart_html(
     const vol = param.seriesData.get(volumeSeries);
     if (!candle) return;
 
-    let timeStr = param.time;
-    if (typeof param.time === 'object' && param.time !== null) {{
+    let timeStr = '';
+    if (typeof param.time === 'string') {{
+      timeStr = param.time;
+    }} else if (typeof param.time === 'object' && param.time !== null) {{
       timeStr = param.time.year + '-' + String(param.time.month).padStart(2, '0') + '-' + String(param.time.day).padStart(2, '0');
+    }} else if (typeof param.time === 'number') {{
+      const d = new Date(param.time * 1000);
+      timeStr = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
     }}
     const volVal = (vol && vol.value !== undefined) ? Number(vol.value).toLocaleString('en-IN') : '—';
     const cColor = candle.close >= candle.open ? '#2EE6C8' : '#FF6B6B';
@@ -184,8 +194,61 @@ def render_chart_html(
     `;
   }});
 
+  const storageKey = 'pivotdesk_chart_range_' + ('{clean_ticker}' || 'default');
+  const openKey = 'pivotdesk_chart_open_' + ('{clean_ticker}' || 'default');
+
+  function restoreVisibleRange() {{
+    try {{
+      const savedRangeStr = sessionStorage.getItem(storageKey);
+      if (savedRangeStr) {{
+        const savedRange = JSON.parse(savedRangeStr);
+        if (savedRange && savedRange.from !== undefined && savedRange.to !== undefined) {{
+          chart.timeScale().setVisibleLogicalRange(savedRange);
+          return true;
+        }}
+      }}
+    }} catch(e) {{}}
+    return false;
+  }}
+
+  const detailsEl = container.closest('details');
+  if (detailsEl) {{
+    const savedOpen = sessionStorage.getItem(openKey);
+    if (savedOpen === 'true') {{
+      detailsEl.open = true;
+    }} else if (savedOpen === 'false') {{
+      detailsEl.open = false;
+    }}
+
+    detailsEl.addEventListener('toggle', () => {{
+      sessionStorage.setItem(openKey, detailsEl.open ? 'true' : 'false');
+      if (detailsEl.open) {{
+        setTimeout(() => {{
+          chart.applyOptions({{ width: container.clientWidth || 900 }});
+          if (!restoreVisibleRange()) {{
+            chart.timeScale().fitContent();
+          }}
+        }}, 50);
+      }}
+    }});
+  }}
+
+  // Restore saved view state on load
+  restoreVisibleRange();
+
+  // Persist zoom and pan state to sessionStorage
+  chart.timeScale().subscribeVisibleLogicalRangeChange(range => {{
+    if (range) {{
+      try {{
+        sessionStorage.setItem(storageKey, JSON.stringify(range));
+      }} catch(e) {{}}
+    }}
+  }});
+
   window.addEventListener('resize', () => {{
-    chart.applyOptions({{ width: container.clientWidth }});
+    if (!detailsEl || detailsEl.open) {{
+      chart.applyOptions({{ width: container.clientWidth }});
+    }}
   }});
 }})();
 </script>

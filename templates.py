@@ -89,6 +89,9 @@ padding:3px 8px;border-radius:99px;border:1px solid;letter-spacing:.04em;white-s
 @media(max-width:760px){.grid{grid-template-columns:1fr}}
 .panelbox{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px 20px;display:flex;flex-direction:column}
 .panelbox h3{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--dim);font-weight:800;margin-bottom:13px}
+.chart-expander summary::-webkit-details-marker,.chart-expander summary::marker{display:none !important;content:"" !important}
+.chart-expander summary{list-style:none !important;transition:background-color 0.2s ease;border-radius:16px}
+.chart-expander summary:hover{background-color:rgba(255,255,255,.03)}
 .lrow{display:flex;align-items:center;justify-content:space-between;padding:9px 2px;border-bottom:1px solid var(--line)}
 .lrow:last-child{border-bottom:0}
 .lrow .nm{font-size:13px;font-weight:800;display:flex;gap:10px;align-items:center}
