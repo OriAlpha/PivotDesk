@@ -18,6 +18,7 @@ from indicators import (
     pivots,
     rsi,
     supertrend,
+    supertrend_series,
     weekly_pivot,
 )
 
@@ -138,6 +139,34 @@ def test_supertrend_flips_down_after_a_crash():
     up, stop = supertrend(frame(closes))
     assert up is False
     assert stop > closes[-1]
+
+
+# ---------------------------------------------------------------- supertrend series
+
+
+def test_supertrend_series_matches_the_last_value_api():
+    """The series refactor must not change what supertrend() reports."""
+    closes = [100.0 + i for i in range(120)]
+    df = frame(closes)
+    up, stop = supertrend(df)
+    up_s, stop_s = supertrend_series(df)
+    assert bool(up_s.iloc[-1]) is up
+    assert float(stop_s.iloc[-1]) == pytest.approx(stop)
+
+
+def test_supertrend_series_is_one_row_per_session():
+    df = frame([100.0 + i for i in range(60)])
+    up_s, stop_s = supertrend_series(df)
+    assert len(up_s) == len(df)
+    assert len(stop_s) == len(df)
+
+
+def test_supertrend_series_flips_through_a_crash():
+    closes = [100.0 + i for i in range(100)] + [199.0 - 8 * i for i in range(1, 21)]
+    up_s, _ = supertrend_series(frame(closes))
+    # Starts up (long uptrend), ends down (the crash) — both states appear.
+    assert bool(up_s.iloc[0]) is True
+    assert bool(up_s.iloc[-1]) is False
 
 
 # ---------------------------------------------------------------- weekly pivot

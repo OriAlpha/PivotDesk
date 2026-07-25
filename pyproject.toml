@@ -14,7 +14,12 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=8,<10"]
+dev = [
+    "pytest>=8,<10",
+    # Linter/formatter. Added to the dev group so it never reaches
+    # requirements.txt (Streamlit Community Cloud exports with --no-dev).
+    "ruff>=0.6,<1",
+]
 
 [tool.uv]
 package = false
@@ -22,3 +27,15 @@ package = false
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+# Safe, low-opinion set: pycodestyle errors (E), pyflakes (F), import sorting (I).
+# No stylistic nitpicks (those live in `ruff format`), no preview rules.
+select = ["E", "F", "I"]
+# E501 (line too long): `ruff format` already wraps real code. The remaining
+# long lines live inside HTML/CSS string literals and f-strings that cannot be
+# split without breaking them, so the rule only nags on strings it can't fix.
+ignore = ["E501"]

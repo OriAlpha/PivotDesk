@@ -10,6 +10,7 @@ from __future__ import annotations
 import datetime as dt
 from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -18,22 +19,24 @@ from config import IST
 # ---------------------------------------------------------------- primitives
 
 
-def pivots(h: float, l: float, c: float) -> dict[str, float]:
+def pivots(h: float, lo: float, c: float) -> dict[str, float]:
     """Standard daily pivot points (PP, R1/R2, S1/S2)."""
-    pp = (h + l + c) / 3
+    pp = (h + lo + c) / 3
     return {
         "PP": pp,
-        "R1": 2 * pp - l,
+        "R1": 2 * pp - lo,
         "S1": 2 * pp - h,
-        "R2": pp + (h - l),
-        "S2": pp - (h - l),
+        "R2": pp + (h - lo),
+        "S2": pp - (h - lo),
     }
 
 
 def rsi(close: pd.Series, period: int = 14) -> float:
     """Wilder-smoothed RSI."""
     delta = close.diff()
-    gain = float(delta.clip(lower=0).ewm(alpha=1 / period, adjust=False).mean().iloc[-1])
+    gain = float(
+        delta.clip(lower=0).ewm(alpha=1 / period, adjust=False).mean().iloc[-1]
+    )
     loss = float(
         (-delta.clip(upper=0)).ewm(alpha=1 / period, adjust=False).mean().iloc[-1]
     )
@@ -78,6 +81,21 @@ def supertrend(
     Inner loops operate on raw NumPy arrays instead of Pandas ``.iloc``
     indexing, which avoids per-access overhead and is ~20-50× faster.
     """
+    up_series, stop_series = supertrend_series(df, period, mult)
+    up = bool(up_series.iloc[-1])
+    return up, float(stop_series.iloc[-1])
+
+
+def supertrend_series(
+    df: pd.DataFrame, period: int = 10, mult: float = 3.0
+) -> tuple[pd.Series, pd.Series]:
+    """Per-day ``(is_uptrend, stop_level)`` series — the history behind
+    :func:`supertrend`'s final value.
+
+    Same arithmetic as :func:`supertrend`; the ``up`` flag is recorded at every
+    step instead of only the last. ``stop`` carries the active band (lower when
+    up, upper when down) so each row reads as the trend state *on that day*.
+    """
     hl2 = (df["High"] + df["Low"]) / 2
     a = atr(df, period)
     ub = (hl2 + mult * a).values
@@ -100,13 +118,16 @@ def supertrend(
         )
 
     up = True
-    for i in range(period, n):
-        up = close_arr[i] > fub[i] if not up else close_arr[i] >= flb[i]
+    up_arr = np.empty(n, dtype=bool)
+    stop_arr = np.empty(n, dtype=float)
+    for i in range(n):
+        if i >= period:
+            up = close_arr[i] > fub[i] if not up else close_arr[i] >= flb[i]
+        up_arr[i] = up
+        stop_arr[i] = flb[i] if up else fub[i]
 
-    # Comparing NumPy scalars yields np.bool_; cast so the return type matches
-    # the annotation and callers can use ``is True`` (cf. macd_state).
-    up = bool(up)
-    return up, float(flb[-1] if up else fub[-1])
+    idx = df.index
+    return pd.Series(up_arr, index=idx), pd.Series(stop_arr, index=idx)
 
 
 def weekly_pivot(df: pd.DataFrame, today: dt.date) -> float:
@@ -126,8 +147,8 @@ def weekly_pivot(df: pd.DataFrame, today: dt.date) -> float:
         )
         if wk_end >= today:  # current week still in progress
             wk = wk.iloc[:-1]
-    h, l, c = wk.iloc[-1][["High", "Low", "Close"]]
-    return float((h + l + c) / 3)
+    h, lo, c = wk.iloc[-1][["High", "Low", "Close"]]
+    return float((h + lo + c) / 3)
 
 
 def pct_return(close: pd.Series, sessions: int) -> float | None:

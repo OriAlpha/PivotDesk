@@ -98,6 +98,30 @@ def fetch_daily_resilient(ticker: str) -> tuple[pd.DataFrame, bool]:
     return df, False
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_benchmark() -> pd.DataFrame | None:
+    """Fetch NIFTY 50 (``^NSEI``) 2y daily for benchmark comparison.
+
+    Returns ``None`` on any failure — the benchmark is a secondary read, and an
+    outage here must not break the stock view. Same session and columns as
+    :func:`fetch_daily` so :func:`pct_return` works on either unchanged.
+    """
+    try:
+        session = get_session()
+        df = yf.Ticker("^NSEI", session=session).history(
+            period="2y", interval="1d", auto_adjust=False
+        )
+        if df.empty:
+            return None
+        cols = ["Close"]
+        if "Adj Close" in df.columns:
+            cols.append("Adj Close")
+        return df[cols].dropna()
+    except Exception as e:
+        logger.warning("Benchmark fetch failed: %s", e)
+        return None
+
+
 @st.cache_data(ttl=55, show_spinner=False)
 def fetch_live_price(ticker: str) -> tuple[float, float, float] | None:
     """Fetch latest price, day-low, day-high from Yahoo's quote (cached 55 s).
@@ -125,7 +149,10 @@ def fetch_live_price(ticker: str) -> tuple[float, float, float] | None:
         if not (price > 0 and low > 0 and high >= low):
             logger.warning(
                 "Implausible quote for %s: last=%s low=%s high=%s",
-                ticker, price, low, high,
+                ticker,
+                price,
+                low,
+                high,
             )
             return None
         # Keep the day range coherent if the quote updates before its extremes.

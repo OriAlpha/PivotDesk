@@ -42,6 +42,15 @@ def _fresh(monkeypatch, **query_params):
         rendering, "fetch_daily_resilient", lambda _t: (_history(), False)
     )
     monkeypatch.setattr(rendering, "fetch_live_price", lambda _t: (150.0, 148.0, 152.0))
+    monkeypatch.setattr(rendering, "fetch_benchmark", lambda: None)
+    # The portfolio rollup fetches through its own module namespace; patch it
+    # there too so an expanded Portfolio panel never reaches the network.
+    import portfolio
+
+    monkeypatch.setattr(
+        portfolio, "fetch_daily_resilient", lambda _t: (_history(), False)
+    )
+    monkeypatch.setattr(portfolio, "fetch_live_price", lambda _t: (150.0, 148.0, 152.0))
     at = AppTest.from_file(APP, default_timeout=60)
     for key, value in query_params.items():
         at.query_params[key] = value
@@ -92,6 +101,7 @@ def test_core_inputs_are_always_present(app):
     assert [i.label for i in app.number_input] == [
         "Your buy price ₹ (optional)",
         "Qty (optional)",
+        "Risk ₹ (optional)",
     ]
 
 
@@ -208,3 +218,57 @@ def test_reload_param_clears_cache_and_restores_params(monkeypatch):
     assert query_param(at, "ticker") == "RELIANCE.NS"
     assert query_param(at, "positions") == "RELIANCE:1200:50,TCS:3100.5:10"
 
+
+def test_risk_budget_round_trips_through_the_url(monkeypatch):
+    at = _fresh(monkeypatch, ticker="RELIANCE.NS", risk="5000")
+    assert not at.exception
+    assert query_param(at, "risk") == "5000"
+    # The widget reflects the URL value, not a stale default.
+    risk_input = next(i for i in at.number_input if i.label.startswith("Risk"))
+    assert risk_input.value == 5000.0
+
+
+def test_clearing_the_risk_budget_removes_it_from_the_url(monkeypatch):
+    """An empty budget must not leave a dead ?risk= in the bookmark."""
+    at = _fresh(monkeypatch, ticker="RELIANCE.NS")
+    assert not at.exception
+    assert "risk" not in at.query_params
+
+
+# ---------------------------------------------------------------- portfolio rollup
+
+
+def test_portfolio_toggle_is_collapsed_by_default(app):
+    assert "Portfolio ▾" in labels(app)
+    assert "Portfolio ▴" not in labels(app)
+
+
+def test_expanding_the_portfolio_panel_shows_the_symbols(app):
+    click(app, "Portfolio ▾")
+    # The default favorites appear as one button per symbol.
+    assert set(FAVOURITES) <= set(labels(app))
+
+
+def test_clicking_a_portfolio_symbol_loads_its_dashboard(app):
+    click(app, "Portfolio ▾")
+    click(app, "TCS")
+    assert query_param(app, "ticker") == "TCS.NS"
+
+
+def test_held_positions_lead_the_portfolio_list(monkeypatch):
+    """Held symbols come first in the rollup — the things you own lead the
+    one-glance view."""
+    at = _fresh(
+        monkeypatch,
+        ticker="RELIANCE.NS",
+        positions="RELIANCE:1200:50,TCS:3100:10",
+    )
+    click(at, "Portfolio ▾")
+    # The first two buttons after the toggle are the held symbols, before the
+    # default favorites that aren't held.
+    sym_buttons = [
+        b.label
+        for b in at.button
+        if b.label in FAVOURITES or b.label in ("RELIANCE", "TCS")
+    ]
+    assert sym_buttons.index("RELIANCE") < sym_buttons.index("INFY")

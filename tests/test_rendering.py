@@ -19,6 +19,7 @@ from rendering import (
 def _piv(pp, s1, s2, r1, r2):
     return {"PP": pp, "S1": s1, "S2": s2, "R1": r1, "R2": r2}
 
+
 # Last completed session, and the one before it.
 PREV_CLOSE, PREV_LOW, PREV_HIGH = 145.0, 143.0, 147.0
 PRIOR_CLOSE = 140.0
@@ -80,7 +81,13 @@ def _score(n: int):
         return below if bullish else above
 
     return technical_score(
-        100.0, ma(flags[0]), ma(flags[1]), ma(flags[2]), flags[3], flags[4], ma(flags[5])
+        100.0,
+        ma(flags[0]),
+        ma(flags[1]),
+        ma(flags[2]),
+        flags[3],
+        flags[4],
+        ma(flags[5]),
     )
 
 
@@ -196,6 +203,36 @@ def test_position_card_falls_back_to_per_share_without_a_quantity():
     assert "/sh" in position_card(100.0, 110.0, True, 95.0, qty=0)
 
 
+# ---------------------------------------------------------------- position sizing
+
+
+def test_position_card_sizes_off_the_entry_to_stop_distance():
+    """₹5,000 risk, entry 100, stop 95 → 5 per share of downside → 1000 shares
+    at ₹100,000 cost."""
+    html = position_card(100.0, 110.0, True, 95.0, risk_budget=5000.0)
+    assert "1,000 sh" in html
+    assert "100,000.00 cost" in html
+    assert "₹5,000.00 risk" in html
+
+
+def test_position_card_omits_sizing_without_a_risk_budget():
+    html = position_card(100.0, 110.0, True, 95.0)
+    assert "Size:" not in html
+
+
+def test_position_card_omits_sizing_in_a_downtrend():
+    """The stop sits above the entry when the trend is down, so there is no
+    downside distance to size a position off — the line must not appear."""
+    html = position_card(100.0, 90.0, False, 104.0, risk_budget=5000.0)
+    assert "Size:" not in html
+
+
+def test_position_card_omits_sizing_when_the_stop_is_at_or_above_entry():
+    """Zero or negative entry-to-stop would divide by zero or invert the math."""
+    assert "Size:" not in position_card(100.0, 110.0, True, 100.0, risk_budget=5000.0)
+    assert "Size:" not in position_card(100.0, 110.0, True, 105.0, risk_budget=5000.0)
+
+
 # ---------------------------------------------------------------- entry verdict
 
 
@@ -304,7 +341,9 @@ def test_action_card_shows_how_far_the_exit_sits_when_waiting():
 
 def test_action_card_for_a_downtrend_offers_a_reclaim_not_an_entry_zone():
     v = entry_verdict(100.0, 1, False, 104.0, 40.0, 2.0, _piv(101, 98, 94, 106, 110))
-    html = action_card(v, "INFY is falling right now — best to wait until it turns back up.")
+    html = action_card(
+        v, "INFY is falling right now — best to wait until it turns back up."
+    )
     assert "falling right now" in html
     assert 'class="acard dn"' in html
     assert "move back above" in html

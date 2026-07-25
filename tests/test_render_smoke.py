@@ -53,7 +53,16 @@ def at(day: dt.date, hour: int, minute: int = 0) -> dt.datetime:
 def rendered(monkeypatch):
     """Render with patched I/O and return the HTML handed to the iframe."""
 
-    def _render(*, data_through, now, live, entry=0.0, qty=0.0, daily_stale=False):
+    def _render(
+        *,
+        data_through,
+        now,
+        live,
+        entry=0.0,
+        qty=0.0,
+        daily_stale=False,
+        benchmark=None,
+    ):
         captured: dict[str, str] = {}
         monkeypatch.setattr(
             rendering.st, "iframe", lambda html, **kw: captured.update(html=html)
@@ -64,6 +73,7 @@ def rendered(monkeypatch):
             lambda _t: (history(data_through), daily_stale),
         )
         monkeypatch.setattr(rendering, "fetch_live_price", lambda _t: live)
+        monkeypatch.setattr(rendering, "fetch_benchmark", lambda: benchmark)
         rendering.render("TEST.NS", entry, now=now, qty=qty)
         return captured["html"]
 
@@ -80,8 +90,14 @@ HOLIDAY = dict(data_through=MON, now=at(TUE, 11, 0), live=None)
 
 
 @pytest.mark.parametrize(
-    "case", [dict(OPEN, live=(150.0, 148.0, 152.0)), dict(OPEN, live=None), CLOSED,
-             WEEKEND, HOLIDAY]
+    "case",
+    [
+        dict(OPEN, live=(150.0, 148.0, 152.0)),
+        dict(OPEN, live=None),
+        CLOSED,
+        WEEKEND,
+        HOLIDAY,
+    ],
 )
 def test_render_has_no_unsubstituted_placeholders(rendered, case):
     assert PLACEHOLDER.findall(rendered(**case, entry=100.0, qty=25)) == []
@@ -248,17 +264,118 @@ def test_no_move_context_when_the_price_is_stale(rendered):
 
 def test_reload_url_preserves_positions():
     import rendering
+
     html = rendering.HTML.safe_substitute(
-        name="TEST", mkt_label="", reload_cls="", dot_color="", dot_anim="",
-        ph="", pl="", pc="", price="", px_cls="", chg_html="", pp="", r1="", r2="",
-        s1="", s2="", s1_pct="", r1_pct="", px_pct="", wpp="", returns_html="",
-        rng_pct="", bias_label="", bias_cls="", bias_n="", bias_caution="",
-        bias_chips="", action_card="", move_ctx="",
-        day_range_html="", data_banner="", pos_card="", ma_v="",
-        ma_cls="", ma_s="", rsi_v="", rsi_cls="", rsi_s="", macd_v="", macd_cls="",
-        macd_s="", st_v="", st_cls="", st_stop="", atr_v="", atr_pct="", vol_v="",
-        vol_cls="", vol_s="", read="",
+        name="TEST",
+        mkt_label="",
+        reload_cls="",
+        dot_color="",
+        dot_anim="",
+        ph="",
+        pl="",
+        pc="",
+        price="",
+        px_cls="",
+        chg_html="",
+        pp="",
+        r1="",
+        r2="",
+        s1="",
+        s2="",
+        s1_pct="",
+        r1_pct="",
+        px_pct="",
+        wpp="",
+        returns_html="",
+        benchmark_html="",
+        rng_pct="",
+        bias_label="",
+        bias_cls="",
+        bias_n="",
+        bias_caution="",
+        bias_chips="",
+        bias_confidence="",
+        action_card="",
+        move_ctx="",
+        day_range_html="",
+        data_banner="",
+        pos_card="",
+        ma_v="",
+        ma_cls="",
+        ma_s="",
+        rsi_v="",
+        rsi_cls="",
+        rsi_s="",
+        macd_v="",
+        macd_cls="",
+        macd_s="",
+        st_v="",
+        st_cls="",
+        st_stop="",
+        atr_v="",
+        atr_pct="",
+        vol_v="",
+        vol_cls="",
+        vol_s="",
+        read="",
         reload_url="?ticker=RELIANCE.NS&entry=1200&favorites=TCS&positions=RELIANCE:1200:50,TCS:3100:10&reload=1",
     )
     assert "&positions=RELIANCE:1200:50,TCS:3100:10" in html
 
+
+# ---------------------------------------------------------------- benchmark
+
+
+def test_a_failed_benchmark_fetch_is_invisible(rendered):
+    """The default fixture returns None for the benchmark; the page must render
+    without the vs-NIFTY line and without any leftover placeholder."""
+    html = rendered(**OPEN, live=(150.0, 148.0, 152.0))
+    assert "vs NIFTY" not in html
+    assert "$benchmark_html" not in html
+
+
+def test_benchmark_shows_relative_outperformance(rendered):
+    """Stock +10% over 1M vs NIFTY flat → a green '+10.0pp' under the row."""
+    # Stock history ends ~130ish; freeze NIFTY flat near the same level so the
+    # 1M window shows a clean relative gap.
+    bench = history(TUE).copy()
+    flat = bench["Close"].iloc[-1]
+    bench["Close"] = flat
+    bench["Adj Close"] = flat
+    html = rendered(**OPEN, live=(150.0, 148.0, 152.0), benchmark=bench)
+    assert "vs NIFTY 50" in html
+    # A positive relative read is green.
+    assert "var(--sup)" in html.split("vs NIFTY")[1]
+
+
+# ---------------------------------------------------------------- confidence
+
+
+def test_the_confidence_line_renders_when_the_engine_returns_a_result(
+    rendered, monkeypatch
+):
+    """The card shows the win rate when the engine has enough history to call
+    it. Patched at the module boundary so the test pins the *rendering* branch,
+    not the backtest's data sensitivity."""
+    from backtest import Confidence
+
+    monkeypatch.setattr(
+        rendering,
+        "signal_confidence",
+        lambda *a, **k: Confidence(win_rate=0.64, n=28, avg_return=1.2),
+    )
+    html = rendered(**OPEN, live=(150.0, 148.0, 152.0))
+    assert "Up 5d later:" in html
+    assert "64%" in html
+    assert "of 28 similar days" in html
+
+
+def test_the_confidence_line_is_absent_when_the_engine_returns_none(
+    rendered, monkeypatch
+):
+    """Below the minimum-sample threshold the line vanishes cleanly — no
+    literal ``$bias_confidence`` leaks into the page."""
+    monkeypatch.setattr(rendering, "signal_confidence", lambda *a, **k: None)
+    html = rendered(**OPEN, live=(150.0, 148.0, 152.0))
+    assert "Up 5d later:" not in html
+    assert "$bias_confidence" not in html

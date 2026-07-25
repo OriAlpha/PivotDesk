@@ -2,7 +2,11 @@ __pycache__/
 .venv/
 *.pyc
 .pytest_cache/
+.ruff_cache/
 graphify-out/
+
+# session tooling artifacts
+.zcode/
 
 # personal notes / local reference — not tracked
 pivotdesk-guide.md

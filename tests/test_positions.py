@@ -12,7 +12,6 @@ from positions import (
     symbol_key,
 )
 
-
 # ---------------------------------------------------------------- symbol keys
 
 
