@@ -316,6 +316,8 @@ def test_reload_url_preserves_positions():
         vol_s="",
         chart_html="",
         read="",
+        visit_count="1,248",
+        device_count="1",
         reload_url="?ticker=RELIANCE.NS&entry=1200&positions=RELIANCE:1200:50,TCS:3100:10&reload=1",
     )
     assert "&positions=RELIANCE:1200:50,TCS:3100:10" in html

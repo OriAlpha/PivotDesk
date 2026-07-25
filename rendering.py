@@ -219,11 +219,13 @@ def position_card(
     sizing_html = ""
     if risk_budget and risk_budget > 0 and st_up and entry > st_stop:
         risk_per_share = entry - st_stop
-        shares = risk_budget / risk_per_share
+        trade_val = (entry * qty) if (qty and qty > 0) else (entry * 100.0)
+        rupee_risk = (risk_budget / 100.0) * trade_val
+        shares = rupee_risk / risk_per_share
         cost = shares * entry
         sizing_html = (
             f'<div class="sub2" style="font-size:11px;color:var(--muted)">'
-            f"Size: ₹{fmt(risk_budget)} risk &rarr; {shares:,.0f} sh "
+            f"Size: {risk_budget:.1f}% risk (₹{fmt(rupee_risk)}) &rarr; {shares:,.0f} sh "
             f"(₹{fmt(cost)} cost)</div>"
         )
 
@@ -269,6 +271,8 @@ def render(
     qty: float = 0.0,
     positions_str: str = "",
     risk_budget: float = 0.0,
+    total_visits: int = 0,
+    device_count: int = 1,
 ) -> None:
     """Build and display the full dashboard for *ticker*."""
     entry_val = float(entry) if entry is not None else 0.0
@@ -513,5 +517,7 @@ def render(
         ),
         chart_html=render_chart_html(daily, piv, st_stop=ind.st_stop),
         read=compose_read(),
+        visit_count=f"{total_visits:,}",
+        device_count=str(device_count),
     )
-    st.iframe(html, height="content")
+    st.iframe(html, height=1550)

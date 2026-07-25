@@ -21,8 +21,7 @@ HTML = Template(
 :root{--bg:#0A0E17;--panel:rgba(20,29,48,.72);--line:#1E2C48;--text:#EDF2FB;--muted:#7E8DA8;
 --dim:#55637E;--pp:#FFC53D;--res:#FF6B6B;--sup:#2EE6C8;--price:#6FA4FF}
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);
-color:var(--text);font-family:'Archivo',sans-serif}
+html, body{background:var(--bg);color:var(--text);font-family:'Archivo',sans-serif;overflow-y:hidden}
 .mono{font-family:'IBM Plex Mono',monospace}
 .wrap{max-width:980px;margin:0 auto;padding:10px 16px 28px}
 .top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:26px}
@@ -63,10 +62,10 @@ box-shadow:0 0 22px rgba(111,164,255,.6)}
 .ret span{color:var(--dim);font-weight:800;margin-right:7px}
 .verdict{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
 @media(max-width:760px){.verdict{grid-template-columns:1fr}}
-.vcard{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px 20px;text-align:center}
+.vcard{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px 20px;text-align:center;display:flex;flex-direction:column;justify-content:center;align-items:center;height:100%}
 .vcard .k{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--dim);font-weight:800;margin-bottom:8px}
 .vcard .big{font-size:24px;font-weight:800}
-.vcard .sub2{font-size:12px;color:var(--muted);margin-top:5px;font-weight:600}
+.vcard .sub2{font-size:12px;color:var(--muted);margin-top:5px;font-weight:600;text-align:center}
 .sigchips{display:flex;flex-wrap:wrap;gap:5px;justify-content:center;margin-top:10px}
 .sigchips span{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:700;
 padding:3px 8px;border-radius:99px;border:1px solid;letter-spacing:.04em;white-space:nowrap}
@@ -86,9 +85,9 @@ padding:3px 8px;border-radius:99px;border:1px solid;letter-spacing:.04em;white-s
 .atag{margin-top:11px;font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);font-weight:700}
 .movectx{font-size:11.5px;color:var(--dim);margin-top:7px;font-weight:600}
 .movectx b{color:var(--muted);font-weight:700}
-.grid{display:grid;grid-template-columns:340px 1fr;gap:16px}
+.grid{display:grid;grid-template-columns:340px 1fr;gap:16px;align-items:stretch}
 @media(max-width:760px){.grid{grid-template-columns:1fr}}
-.panelbox{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px 20px}
+.panelbox{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px 20px;display:flex;flex-direction:column}
 .panelbox h3{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--dim);font-weight:800;margin-bottom:13px}
 .lrow{display:flex;align-items:center;justify-content:space-between;padding:9px 2px;border-bottom:1px solid var(--line)}
 .lrow:last-child{border-bottom:0}
@@ -99,14 +98,14 @@ padding:3px 8px;border-radius:99px;border:1px solid;letter-spacing:.04em;white-s
 .lr-p .chip{background:var(--pp)}.lr-p .v{color:var(--pp)}
 .lr-s .chip{background:var(--sup)}.lr-s .v{color:var(--sup)}
 .lr-w .nm,.lr-w .v{color:var(--dim)}
-.sgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.sgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;flex:1}
 @media(max-width:560px){.sgrid{grid-template-columns:1fr 1fr}}
-.sc{background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:12px;padding:12px 13px;text-align:center}
+.sc{background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:12px;padding:14px 13px;text-align:center;display:flex;flex-direction:column;justify-content:center}
 .sc .k{font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);font-weight:800;margin-bottom:6px}
 .sc .v{font-size:17px;font-weight:800}
 .sc .s{font-size:10.5px;color:var(--muted);margin-top:4px;font-weight:600}
 .rc{background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:12px;
-padding:12px 16px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}
+padding:11px 16px;margin-bottom:9px;display:flex;align-items:center;justify-content:space-between;flex:1}
 .rc:last-child{margin-bottom:0}
 .rc .k{font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);font-weight:800}
 .rc .v{font-size:16px;font-weight:800;color:var(--text)}
@@ -182,7 +181,7 @@ $pos_card
 <div class="sc"><div class="k">Vol vs 30D</div><div class="v $vol_cls">$vol_v×</div><div class="s">$vol_s</div></div>
 </div></div></div>
 $chart_html
-<div class="read">$read</div>
+<div class="read">$read · 👁️ $visit_count visits · 📱 $device_count devices</div>
 </div></body></html>"""
 )
 

@@ -117,10 +117,11 @@ st.markdown(
     padding-top: 0px !important;
   }
   
-  /* Ensure iframe occupies full width */
+  /* Ensure iframe occupies full width without inner scrollbars */
   iframe {
     width: 100% !important;
     border: none !important;
+    overflow: hidden !important;
   }
   
   /* Style the buttons inside columns to look like premium pills */
@@ -129,10 +130,13 @@ st.markdown(
     color: #7E8DA8 !important;
     border: 1px solid #1E2C48 !important;
     border-radius: 99px !important;
-    padding: 2px 10px !important;
-    font-size: 11px !important;
+    padding: 2px 6px !important;
+    font-size: 10.5px !important;
     font-weight: 700 !important;
     font-family: 'IBM Plex Mono', monospace !important;
+    white-space: nowrap !important;
+    text-overflow: ellipsis !important;
+    overflow: hidden !important;
     transition: all 0.2s ease !important;
     height: auto !important;
     line-height: 1.2 !important;
@@ -198,6 +202,12 @@ def _positive_param(name: str) -> float | None:
 # Load persistent local state
 app_state = load_state()
 
+# Record unique session visit
+if "visited" not in st.session_state:
+    st.session_state.visited = True
+    app_state.record_visit(is_new_session=True)
+    save_state(app_state)
+
 # Default parameters: query string overrides local file storage if non-empty
 raw_ticker = st.query_params.get("ticker", "").strip()
 if not raw_ticker:
@@ -225,10 +235,16 @@ if legacy_entry is not None or legacy_qty is not None:
 held = book.get(current_symbol, Position())
 default_entry, default_qty = held.entry, held.qty
 
-# Risk budget
-default_risk = _positive_param("risk")
-if default_risk is None:
+# Risk percentage (defaults to 5.0%)
+url_risk = _positive_param("risk")
+if url_risk is not None and url_risk <= 100.0:
+    default_risk = url_risk
+elif app_state.risk is not None and app_state.risk <= 100.0:
     default_risk = app_state.risk
+else:
+    default_risk = 5.0
+
+default_risk = min(100.0, max(0.1, float(default_risk)))
 
 # Keep query params in sync with active defaults
 if not st.query_params.get("ticker"):
@@ -236,7 +252,7 @@ if not st.query_params.get("ticker"):
 if positions_raw and "positions" not in st.query_params:
     st.query_params["positions"] = positions_raw
 if default_risk is not None and "risk" not in st.query_params:
-    st.query_params["risk"] = f"{default_risk:.0f}"
+    st.query_params["risk"] = f"{default_risk:.1f}"
 
 c1, c2, c3, c4 = st.columns([2.5, 2.2, 1.3, 1.3])
 with c1:
@@ -258,7 +274,7 @@ with c2:
     )
 with c3:
     qty = st.number_input(
-        "Qty *",
+        "Quantity *",
         min_value=0.0,
         value=default_qty,
         step=1.0,
@@ -269,14 +285,15 @@ with c3:
     )
 with c4:
     risk = st.number_input(
-        "Risk ₹ *",
-        min_value=0.0,
+        "Risk % *",
+        min_value=0.1,
+        max_value=100.0,
         value=default_risk,
-        step=500.0,
-        format="%.0f",
-        placeholder="Budget",
+        step=0.5,
+        format="%.1f",
+        placeholder="5.0%",
         key="risk_input",
-        help="Rupees you'd risk on the trade — sizes the position off the entry-to-stop distance",
+        help="Percentage of trade capital to risk — sizes position off Supertrend stop distance",
     )
 
 
@@ -299,8 +316,8 @@ elif entry != default_entry or qty != default_qty:
     save_state(app_state)
 
 if risk and risk > 0:
-    if st.query_params.get("risk") != f"{risk:.0f}":
-        st.query_params["risk"] = f"{risk:.0f}"
+    if st.query_params.get("risk") != f"{risk:.1f}":
+        st.query_params["risk"] = f"{risk:.1f}"
     app_state.risk = risk
     save_state(app_state)
 elif "risk" in st.query_params:
@@ -357,6 +374,8 @@ def dashboard() -> None:
             qty=qty,
             positions_str=pos_str,
             risk_budget=float(risk_str) if risk_str else 0.0,
+            total_visits=app_state.total_visits,
+            device_count=app_state.device_count,
         )
     except ValueError as e:
         st.error(str(e))

@@ -207,12 +207,12 @@ def test_position_card_falls_back_to_per_share_without_a_quantity():
 
 
 def test_position_card_sizes_off_the_entry_to_stop_distance():
-    """₹5,000 risk, entry 100, stop 95 → 5 per share of downside → 1000 shares
-    at ₹100,000 cost."""
-    html = position_card(100.0, 110.0, True, 95.0, risk_budget=5000.0)
-    assert "1,000 sh" in html
-    assert "100,000.00 cost" in html
-    assert "₹5,000.00 risk" in html
+    """5% risk, entry 100, stop 95 → 5 per share of downside → 100 shares
+    at ₹10,000 cost."""
+    html = position_card(100.0, 110.0, True, 95.0, risk_budget=5.0)
+    assert "100 sh" in html
+    assert "10,000.00 cost" in html
+    assert "5.0% risk" in html
 
 
 def test_position_card_omits_sizing_without_a_risk_budget():

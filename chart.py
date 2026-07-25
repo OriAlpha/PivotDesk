@@ -18,6 +18,9 @@ def render_chart_html(
     sessions: int = 252,
 ) -> str:
     """Return HTML/JS snippet embedding a TradingView Lightweight Chart."""
+    if daily is None or daily.empty:
+        return '<div class="panelbox" style="margin-top:20px;padding:20px;text-align:center;color:var(--muted);">No chart data available.</div>'
+
     df = daily.tail(sessions).copy()
 
     candles = []
@@ -26,12 +29,10 @@ def render_chart_html(
         time_str = (
             date.strftime("%Y-%m-%d") if hasattr(date, "strftime") else str(date)[:10]
         )
-        open_val, high_val, low_val, close_val = (
-            float(row["Open"]),
-            float(row["High"]),
-            float(row["Low"]),
-            float(row["Close"]),
-        )
+        open_val = float(row["Open"]) if pd.notna(row.get("Open")) else 0.0
+        high_val = float(row["High"]) if pd.notna(row.get("High")) else 0.0
+        low_val = float(row["Low"]) if pd.notna(row.get("Low")) else 0.0
+        close_val = float(row["Close"]) if pd.notna(row.get("Close")) else 0.0
         vol = (
             float(row["Volume"]) if "Volume" in row and pd.notna(row["Volume"]) else 0.0
         )

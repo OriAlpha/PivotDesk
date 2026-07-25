@@ -98,8 +98,8 @@ def test_core_inputs_are_always_present(app):
     assert [i.label for i in app.text_input] == ["NSE ticker"]
     assert [i.label for i in app.number_input] == [
         "Buy price ₹ *",
-        "Qty *",
-        "Risk ₹ *",
+        "Quantity *",
+        "Risk % *",
     ]
 
 
@@ -111,7 +111,7 @@ def entry_input(at):
 
 
 def qty_input(at):
-    return next(i for i in at.number_input if i.label.startswith("Qty"))
+    return next(i for i in at.number_input if i.label.startswith("Quantity"))
 
 
 def ticker_input(at):
@@ -181,11 +181,11 @@ def test_reload_param_clears_cache_and_restores_params(monkeypatch, tmp_path):
 
 
 def test_risk_budget_round_trips_through_the_url(monkeypatch, tmp_path):
-    at = _fresh(monkeypatch, tmp_path=tmp_path, ticker="RELIANCE.NS", risk="5000")
+    at = _fresh(monkeypatch, tmp_path=tmp_path, ticker="RELIANCE.NS", risk="5.0")
     assert not at.exception
-    assert query_param(at, "risk") == "5000"
+    assert query_param(at, "risk") == "5.0"
     risk_input = next(i for i in at.number_input if i.label.startswith("Risk"))
-    assert risk_input.value == 5000.0
+    assert risk_input.value == 5.0
 
 
 # ---------------------------------------------------------------- state persistence
@@ -196,12 +196,12 @@ def test_state_persists_across_reloads(monkeypatch, tmp_path):
     save_state(
         AppState(
             last_ticker="TCS.NS",
-            risk=7500.0,
+            risk=7.5,
             positions_raw="TCS:3200:15",
         ),
         state_file,
     )
     at = _fresh(monkeypatch, tmp_path=tmp_path)
     assert query_param(at, "ticker") == "TCS.NS"
-    assert query_param(at, "risk") == "7500"
+    assert query_param(at, "risk") == "7.5"
     assert query_param(at, "positions") == "TCS:3200:15"
