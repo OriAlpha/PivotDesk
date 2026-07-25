@@ -124,6 +124,12 @@ st.markdown(
     overflow: hidden !important;
   }
   
+  @media (max-width: 760px) {
+    iframe {
+      min-height: 2200px !important;
+    }
+  }
+  
   /* Style the buttons inside columns to look like premium pills */
   div[data-testid="stColumn"] button, div[data-testid="column"] button {
     background-color: rgba(255, 255, 255, 0.03) !important;
@@ -157,29 +163,93 @@ st.markdown(
     animation: slide-fade-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
   }
 
-  /* Premium Expander styling to match PivotDesk card panels */
+  /* Premium POSITIONS Card matching Action Card 1:1 */
   div[data-testid="stExpander"] {
-    background-color: rgba(20, 29, 48, 0.72) !important;
+    background-color: #0A0E17 !important;
     border: 1px solid #1E2C48 !important;
     border-radius: 16px !important;
+    margin-bottom: 16px !important;
+    margin-top: 10px !important;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3) !important;
     overflow: hidden !important;
-    margin-top: 16px !important;
+  }
+  div[data-testid="stExpander"] details {
+    border: none !important;
+    background-color: transparent !important;
   }
   div[data-testid="stExpander"] summary {
-    background-color: transparent !important;
-    color: #7E8DA8 !important;
+    background-color: rgba(255, 255, 255, 0.02) !important;
+    border: none !important;
+    padding: 14px 20px !important;
+    border-radius: 16px !important;
+    outline: none !important;
+    box-shadow: none !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-align: center !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    list-style: none !important;
+  }
+  div[data-testid="stExpander"] summary::-webkit-details-marker,
+  div[data-testid="stExpander"] summary::marker {
+    display: none !important;
+    content: "" !important;
+  }
+  div[data-testid="stExpander"] summary:hover, div[data-testid="stExpander"] summary:focus {
+    background-color: rgba(255, 255, 255, 0.04) !important;
+    outline: none !important;
+    box-shadow: none !important;
+  }
+  /* Hide expander toggle icon, SVG, and browser detail markers */
+  div[data-testid="stExpander"] summary [data-testid="stExpanderToggleIcon"],
+  div[data-testid="stExpander"] summary [data-testid="stExpanderIcon"],
+  div[data-testid="stExpander"] summary [data-testid="stIconMaterial"],
+  div[data-testid="stExpander"] summary svg,
+  div[data-testid="stExpander"] summary i,
+  div[data-testid="stExpander"] summary img,
+  div[data-testid="stExpander"] summary [class*="material"],
+  div[data-testid="stExpander"] summary [class*="icon"],
+  div[data-testid="stExpander"] summary [class*="Icon"] {
+    display: none !important;
+    font-size: 0px !important;
+    line-height: 0 !important;
+    color: transparent !important;
+    width: 0px !important;
+    height: 0px !important;
+    max-width: 0px !important;
+    max-height: 0px !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    pointer-events: none !important;
+  }
+  /* Style and guarantee visibility of POSITIONS text */
+  div[data-testid="stExpander"] summary p,
+  div[data-testid="stExpander"] summary [data-testid="stMarkdownContainer"] {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
     font-size: 11px !important;
-    font-weight: 800 !important;
     letter-spacing: 0.18em !important;
     text-transform: uppercase !important;
-    padding: 12px 18px !important;
-  }
-  div[data-testid="stExpander"] summary:hover {
-    color: #EDF2FB !important;
+    color: #7E8DA8 !important;
+    font-weight: 800 !important;
+    font-family: 'Inter', system-ui, sans-serif !important;
+    text-align: center !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    width: 100% !important;
+    justify-content: center !important;
+    align-items: center !important;
   }
   div[data-testid="stExpanderDetails"] {
-    padding: 0px 14px 14px 14px !important;
+    padding: 16px 20px 18px 20px !important;
     background-color: transparent !important;
+    border-top: 1px solid #1E2C48 !important;
   }
 </style>""",
     unsafe_allow_html=True,
@@ -254,110 +324,117 @@ if positions_raw and "positions" not in st.query_params:
 if default_risk is not None and "risk" not in st.query_params:
     st.query_params["risk"] = f"{default_risk:.1f}"
 
-c1, c2, c3, c4 = st.columns([2.5, 2.2, 1.3, 1.3])
-with c1:
-    raw = st.text_input(
-        "NSE ticker",
-        value=default_ticker,
-        help="Any NSE symbol — .NS is added automatically",
-    )
-with c2:
-    entry = st.number_input(
-        "Buy price ₹ *",
-        min_value=0.0,
-        value=default_entry,
-        step=0.05,
-        format="%.2f",
-        placeholder="Enter entry price",
-        key=f"entry_input_{default_ticker}",
-        help="Average entry price — enables the position monitor",
-    )
-with c3:
-    qty = st.number_input(
-        "Quantity *",
-        min_value=0.0,
-        value=default_qty,
-        step=1.0,
-        format="%.0f",
-        placeholder="Shares",
-        key=f"qty_input_{default_ticker}",
-        help="Share count — shows P&L in rupees instead of per share",
-    )
-with c4:
-    risk = st.number_input(
-        "Risk % *",
-        min_value=0.1,
-        max_value=100.0,
-        value=default_risk,
-        step=0.5,
-        format="%.1f",
-        placeholder="5.0%",
-        key="risk_input",
-        help="Percentage of trade capital to risk — sizes position off Supertrend stop distance",
-    )
+with st.expander("POSITIONS", expanded=False):
+    c1, c2, c3, c4 = st.columns([2.5, 2.2, 1.3, 1.3])
+    with c1:
+        raw = st.text_input(
+            "NSE ticker",
+            value=default_ticker,
+            help="Any NSE symbol — .NS is added automatically",
+        )
+    with c2:
+        entry = st.number_input(
+            "Buy price ₹ *",
+            min_value=0.0,
+            value=default_entry,
+            step=0.05,
+            format="%.2f",
+            placeholder="Enter entry price",
+            key=f"entry_input_{default_ticker}",
+            help="Average entry price — enables the position monitor",
+        )
+    with c3:
+        qty = st.number_input(
+            "Quantity *",
+            min_value=0.0,
+            value=default_qty,
+            step=1.0,
+            format="%.0f",
+            placeholder="Shares",
+            key=f"qty_input_{default_ticker}",
+            help="Share count — shows P&L in rupees instead of per share",
+        )
+    with c4:
+        risk = st.number_input(
+            "Risk % *",
+            min_value=0.1,
+            max_value=100.0,
+            value=default_risk,
+            step=0.5,
+            format="%.1f",
+            placeholder="5.0%",
+            key="risk_input",
+            help="Percentage of trade capital to risk — sizes position off Supertrend stop distance",
+        )
 
-
-# Handle ticker & position updates, saving state to file as well
-if raw != default_ticker:
-    if raw.strip():
-        st.query_params["ticker"] = raw.strip()
-        app_state.last_ticker = raw.strip()
-        app_state.add_recent_search(raw.strip())
+    # Handle ticker & position updates, saving state to file as well
+    if raw != default_ticker:
+        if raw.strip():
+            st.query_params["ticker"] = raw.strip()
+            app_state.last_ticker = raw.strip()
+            app_state.add_recent_search(raw.strip())
+            save_state(app_state)
+            st.rerun()
+    elif entry != default_entry or qty != default_qty:
+        book = set_position(book, current_symbol, entry, qty)
+        formatted = format_positions(book)
+        if book:
+            st.query_params["positions"] = formatted
+        elif "positions" in st.query_params:
+            del st.query_params["positions"]
+        app_state.positions_raw = formatted
         save_state(app_state)
-        st.rerun()
-elif entry != default_entry or qty != default_qty:
-    book = set_position(book, current_symbol, entry, qty)
-    formatted = format_positions(book)
-    if book:
-        st.query_params["positions"] = formatted
-    elif "positions" in st.query_params:
-        del st.query_params["positions"]
-    app_state.positions_raw = formatted
+
+    if risk and risk > 0:
+        if st.query_params.get("risk") != f"{risk:.1f}":
+            st.query_params["risk"] = f"{risk:.1f}"
+        app_state.risk = risk
+        save_state(app_state)
+    elif "risk" in st.query_params:
+        del st.query_params["risk"]
+        app_state.risk = None
+        save_state(app_state)
+
+    ticker = raw.strip().upper()
+    if ticker and "." not in ticker:
+        ticker += ".NS"
+
+    # Ensure active ticker is in recent searches
+    app_state.add_recent_search(ticker)
     save_state(app_state)
 
-if risk and risk > 0:
-    if st.query_params.get("risk") != f"{risk:.1f}":
-        st.query_params["risk"] = f"{risk:.1f}"
-    app_state.risk = risk
-    save_state(app_state)
-elif "risk" in st.query_params:
-    del st.query_params["risk"]
-    app_state.risk = None
-    save_state(app_state)
+    # ---------------------------------------------------------------- quick jump pills
 
-ticker = raw.strip().upper()
-if ticker and "." not in ticker:
-    ticker += ".NS"
+    DEFAULT_PILLS = [
+        "RELIANCE",
+        "TCS",
+        "INFY",
+        "HDFCBANK",
+        "TATAMOTORS",
+        "BHAGYANGR",
+    ]
+    jump_symbols: list[str] = []
+    # Recent user searches lead first, followed by held positions, followed by defaults
+    for sym in (app_state.recent_searches or []) + list(book.keys()) + DEFAULT_PILLS:
+        clean_sym = symbol_key(sym)
+        if clean_sym and clean_sym not in jump_symbols:
+            jump_symbols.append(clean_sym)
 
-# Ensure active ticker is in recent searches
-app_state.add_recent_search(ticker)
-save_state(app_state)
+    jump_symbols = jump_symbols[:5]  # Show 5 pills on screen
 
-# ---------------------------------------------------------------- quick jump pills
-
-DEFAULT_PILLS = ["RELIANCE", "TCS", "INFY", "HDFCBANK", "TATAMOTORS", "BHAGYANGR"]
-jump_symbols: list[str] = []
-# Recent user searches lead first, followed by held positions, followed by defaults
-for sym in (app_state.recent_searches or []) + list(book.keys()) + DEFAULT_PILLS:
-    clean_sym = symbol_key(sym)
-    if clean_sym and clean_sym not in jump_symbols:
-        jump_symbols.append(clean_sym)
-
-jump_symbols = jump_symbols[:5]  # Show 5 pills on screen
-
-if jump_symbols:
-    cols_jump = st.columns([1] * len(jump_symbols), gap="small")
-    active_key = symbol_key(default_ticker)
-    for idx, sym in enumerate(jump_symbols):
-        with cols_jump[idx]:
-            is_active = sym == active_key
-            label = f"● {sym}" if is_active else sym
-            if st.button(label, key=f"pill_{sym}", use_container_width=True):
-                st.query_params["ticker"] = sym + ".NS"
-                app_state.last_ticker = sym + ".NS"
-                app_state.add_recent_search(sym + ".NS")
-                save_state(app_state)
-                st.rerun()
+    if jump_symbols:
+        cols_jump = st.columns([1] * len(jump_symbols), gap="small")
+        active_key = symbol_key(default_ticker)
+        for idx, sym in enumerate(jump_symbols):
+            with cols_jump[idx]:
+                is_active = sym == active_key
+                label = f"● {sym}" if is_active else sym
+                if st.button(label, key=f"pill_{sym}", use_container_width=True):
+                    st.query_params["ticker"] = sym + ".NS"
+                    app_state.last_ticker = sym + ".NS"
+                    app_state.add_recent_search(sym + ".NS")
+                    save_state(app_state)
+                    st.rerun()
 
 # ---------------------------------------------------------------- dashboard
 
