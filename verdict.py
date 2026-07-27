@@ -180,7 +180,17 @@ def entry_verdict(
     )
 
 
-def action_card(v: Verdict, summary: str, stale: bool = False) -> str:
+def action_card(
+    v: Verdict,
+    summary: str,
+    stale: bool = False,
+    move_phrase: str = "",
+    atr_pct: float = 0.0,
+    conf_pct: float | None = None,
+    conf_n: int = 0,
+    conf_avg: float = 0.0,
+    rr_str: str = "",
+) -> str:
     """Build the Action card: the plain summary sentence leads, then the why
     and the plan. ``summary`` comes from :func:`plain_summary`, so the headline
     and the supporting detail always describe the same call."""
@@ -195,27 +205,45 @@ def action_card(v: Verdict, summary: str, stale: bool = False) -> str:
     if v.kind == "reclaim":  # downtrend — the stop sits above, as a turn signal
         meta = f"<span>Wait for a move back above <b>₹{fmt(v.stop)}</b></span>"
     elif v.kind == "mixed":  # trend up but unconfirmed — no buy range yet
-        meta = f"<span>If you hold, sell below <b>₹{fmt(v.stop)}</b></span>"
-    elif v.kind == "wait":  # buy range named, plus how far the exit sits right now
+        meta = f"<span>If you hold, Safety Exit <b>₹{fmt(v.stop)}</b></span>"
+    elif v.kind == "wait":  # buy range named
         meta = (
             f"<span>Better buy <b>{zone()}</b></span>"
-            f"<span>sell below <b>₹{fmt(v.stop)}</b></span>"
-            f"<span>now ~<b>{v.risk_pct:.0f}%</b> above exit</span>"
+            f"<span>Safety Exit <b>₹{fmt(v.stop)}</b></span>"
         )
     else:  # "buy" — actionable now, so show what it costs you if it's wrong
         meta = (
             f"<span>Buy <b>{zone()}</b></span>"
-            f"<span>sell below <b>₹{fmt(v.stop)}</b></span>"
+            f"<span>Safety Exit <b>₹{fmt(v.stop)}</b></span>"
             f"<span>risk ~<b>{v.risk_pct:.0f}%</b></span>"
         )
+
+    if rr_str:
+        meta += f"<span>{rr_str}</span>"
+
+    if conf_pct is not None and conf_n > 0:
+        chance_str = (
+            "a 50/50 chance" if 45 <= conf_pct <= 55 else f"a {conf_pct:.0f}% chance"
+        )
+        ctx_sent = (
+            f"Past history shows {chance_str} of a "
+            f"<b>{conf_avg:+.1f}%</b> return over the next 5 days."
+        )
+        meta += f"<span>{ctx_sent}</span>"
 
     emoji = {"up": "🟢", "warn": "🟡", "dn": "🔴"}[v.css]
     # Only a functional note remains — a flag that the read is on a stale price.
     stale_note = '<div class="atag">on the last close, not live</div>' if stale else ""
+    copy_btn = (
+        '<div style="margin-top:12px;">'
+        '<button type="button" class="copy-btn">'
+        "📋 Copy Trade Plan</button></div>"
+    )
     return (
         f'<div class="acard {v.css}"><div class="k">Action</div>'
         f'<div class="asum"><span class="em">{emoji}</span>{summary}</div>'
         f'<div class="ameta">{meta}</div>'
+        f"{copy_btn}"
         f"{stale_note}</div>"
     )
 
@@ -261,6 +289,19 @@ def plain_summary(
     return f"{name} {trend}{heat} — {conclusion}."
 
 
+def move_phrase_text(chg_pct: float, atr_pct: float) -> str:
+    if atr_pct <= 0:
+        return ""
+    ratio = abs(chg_pct) / atr_pct
+    if ratio < 0.6:
+        return "smaller than a normal day"
+    elif ratio < 1.4:
+        return "about a normal day"
+    elif ratio < 2.2:
+        return "bigger than a normal day"
+    return "much bigger than a normal day"
+
+
 def move_context(chg_pct: float, atr_pct: float) -> str:
     """A plain read of today's move next to this stock's usual day, or ''.
 
@@ -268,17 +309,9 @@ def move_context(chg_pct: float, atr_pct: float) -> str:
     "normal day" — so the ratio says whether today is calm, normal, or wild
     *for this particular stock* rather than by an absolute yardstick.
     """
-    if atr_pct <= 0:
+    phrase = move_phrase_text(chg_pct, atr_pct)
+    if not phrase:
         return ""
-    ratio = abs(chg_pct) / atr_pct
-    if ratio < 0.6:
-        phrase = "smaller than a normal day"
-    elif ratio < 1.4:
-        phrase = "about a normal day"
-    elif ratio < 2.2:
-        phrase = "bigger than a normal day"
-    else:
-        phrase = "much bigger than a normal day"
     return (
         f'<div class="movectx">Today the move is {phrase} '
         f"<b>(usual &asymp; &plusmn;{atr_pct:.1f}%)</b></div>"

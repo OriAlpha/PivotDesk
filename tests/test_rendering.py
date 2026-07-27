@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import datetime as dt
+
 import pytest
 
+from config import IST
 from rendering import (
     action_card,
     entry_verdict,
+    expected_range_label,
     move_context,
     plain_summary,
     position_card,
@@ -316,7 +320,7 @@ def test_action_card_leads_with_the_summary_sentence():
     assert _SUMMARY in html  # the sentence is the headline, not a separate label
     assert 'class="asum"' in html
     assert 'class="acard up"' in html
-    assert "Buy" in html and "sell below" in html and "risk ~" in html
+    assert "Buy" in html and "Safety Exit" in html and "risk ~" in html
 
 
 def test_action_card_has_no_advice_disclaimer():
@@ -330,13 +334,12 @@ def test_action_card_marks_a_stale_price():
     assert "not live" in stale
 
 
-def test_action_card_shows_how_far_the_exit_sits_when_waiting():
-    # price 110, stop 96 → (110-96)/110 ≈ 12.7% → "~13% above exit".
+def test_action_card_shows_safety_exit_when_waiting():
     v = entry_verdict(110.0, 5, True, 96.0, 55.0, 2.0, _piv(100, 97, 93, 113, 117))
     assert v.kind == "wait"
     html = action_card(v, "X is rising strongly — better to wait for a dip.")
-    assert "above exit" in html
-    assert "13%" in html
+    assert "Safety Exit" in html
+    assert "96.00" in html
 
 
 def test_action_card_for_a_downtrend_offers_a_reclaim_not_an_entry_zone():
@@ -347,7 +350,7 @@ def test_action_card_for_a_downtrend_offers_a_reclaim_not_an_entry_zone():
     assert "falling right now" in html
     assert 'class="acard dn"' in html
     assert "move back above" in html
-    assert "sell below" not in html  # nothing to buy, so no buy-range line
+    assert "Safety Exit" not in html  # nothing to buy, so no buy-range line
 
 
 # ---------------------------------------------------------------- plain summary
@@ -409,3 +412,33 @@ def test_move_context_is_blank_without_a_usable_daily_range():
 def test_move_context_is_direction_agnostic():
     """A 3% drop is as big a day as a 3% rise."""
     assert move_context(-3.5, 2.0) == move_context(3.5, 2.0)
+
+
+# ---------------------------------------------------------------- expected range
+
+
+# 2026-07-27 is a Monday, so this week runs Mon 27th through Sun 2nd Aug.
+MON, FRI, SAT, SUN = 27, 31, 25, 26
+
+
+def _when(day, hour, minute=0):
+    return dt.datetime(2026, 7, day, hour, minute, tzinfo=IST)
+
+
+@pytest.mark.parametrize(
+    "now, is_open, holiday, expected",
+    [
+        (_when(MON, 11), True, False, "Exp Today"),
+        (_when(MON, 8), False, False, "Exp Today"),
+        (_when(MON, 16), False, False, "Exp Tomorrow"),
+        (_when(SUN, 10), False, False, "Exp Tomorrow"),
+        (_when(FRI, 16), False, False, "Exp Monday"),
+        (_when(SAT, 10), False, False, "Exp Monday"),
+        (_when(MON, 11), False, True, "Exp Tomorrow"),
+        (_when(FRI, 11), False, True, "Exp Monday"),
+    ],
+)
+def test_expected_range_names_the_session_it_describes(now, is_open, holiday, expected):
+    """Regression: the label read "Exp Today" after the close, when the range
+    it describes belongs to the next session."""
+    assert expected_range_label(now, is_open, holiday) == expected

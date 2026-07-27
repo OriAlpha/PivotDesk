@@ -10,3 +10,7 @@ graphify-out/
 
 # personal notes / local reference — not tracked
 pivotdesk-guide.md
+
+# runtime state: positions, visit counts, recent searches. Written on every
+# run and personal to the machine, so it is not shared history.
+pivotdesk_state.json

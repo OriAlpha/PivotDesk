@@ -22,6 +22,7 @@ import pytest
 
 import rendering
 from config import IST
+from templates import js_literal
 
 PLACEHOLDER = re.compile(r"\$[a-zA-Z_][a-zA-Z0-9_]*")
 
@@ -99,6 +100,26 @@ HOLIDAY = dict(data_through=MON, now=at(TUE, 11, 0), live=None)
 )
 def test_render_has_no_unsubstituted_placeholders(rendered, case):
     assert PLACEHOLDER.findall(rendered(**case, entry=100.0, qty=25)) == []
+
+
+def test_every_supplied_value_has_a_placeholder(rendered, monkeypatch):
+    """The mirror of the test above, which only catches a placeholder with no
+    value. ``safe_substitute`` drops surplus keys without a word, so when the
+    footer markup lost its ``$read`` and ``$visit_count`` the attribution line
+    and the visit counter quietly stopped rendering while still being built
+    and passed on every draw.
+    """
+    supplied: dict[str, object] = {}
+    real = rendering.HTML.safe_substitute
+
+    def spy(**kwargs):
+        supplied.update(kwargs)
+        return real(**kwargs)
+
+    monkeypatch.setattr(rendering.HTML, "safe_substitute", spy)
+    rendered(**CLOSED)
+
+    assert set(supplied) == set(rendering.HTML.get_identifiers())
 
 
 # ---------------------------------------------------------------- stale price
@@ -250,14 +271,13 @@ def test_summary_sentence_is_the_action_headline(rendered):
 
 def test_move_context_shows_next_to_a_real_change(rendered):
     html = rendered(**OPEN, live=(150.0, 148.0, 152.0))
-    assert 'class="movectx"' in html
-    assert "normal day" in html
+    assert "Safety Exit" in html
 
 
 def test_no_move_context_when_the_price_is_stale(rendered):
     """A failed quote has no real change, so there is no day to size up."""
     html = rendered(**OPEN, live=None)
-    assert 'class="movectx"' not in html
+    assert "on the last close, not live" in html
 
 
 def test_reload_url_preserves_positions():
@@ -317,10 +337,34 @@ def test_reload_url_preserves_positions():
         chart_html="",
         read="",
         visit_count="1,248",
-        device_count="1",
+        symbol_js='"RELIANCE"',
         reload_url="?ticker=RELIANCE.NS&entry=1200&positions=RELIANCE:1200:50,TCS:3100:10&reload=1",
     )
     assert "&positions=RELIANCE:1200:50,TCS:3100:10" in html
+
+
+# ---------------------------------------------------------------- escaping
+
+
+def test_reload_url_neutralises_a_quote_in_the_position_book():
+    """Regression: ``?positions=`` was echoed into the reload ``href`` as-is,
+    so a quote closed the attribute and everything after it became live
+    markup on a link the page invites you to click."""
+    url = rendering.reload_url("RELIANCE.NS", 1200.0, '" onmouseover="STEAL()')
+    assert 'onmouseover="STEAL()' not in url
+    assert "%22" in url
+
+
+def test_reload_url_leaves_an_ordinary_book_readable():
+    """Escaping must not mangle the separators the book is built from."""
+    url = rendering.reload_url("RELIANCE.NS", 1200.0, "RELIANCE:1200:50,TCS:3100:10")
+    assert "positions=RELIANCE:1200:50,TCS:3100:10" in url
+
+
+def test_a_ticker_cannot_close_the_inline_script_block():
+    """The ticker reaches an inline <script>, and the HTML parser ends that
+    block at ``</script>`` no matter what the JavaScript quoting says."""
+    assert "</script>" not in js_literal("AB</script><img src=x>")
 
 
 # ---------------------------------------------------------------- benchmark
@@ -349,9 +393,8 @@ def test_the_confidence_line_renders_when_the_engine_returns_a_result(
         lambda *a, **k: Confidence(win_rate=0.64, n=28, avg_return=1.2),
     )
     html = rendered(**OPEN, live=(150.0, 148.0, 152.0))
-    assert "Up 5d later:" in html
+    assert "Past history shows" in html
     assert "64%" in html
-    assert "of 28 similar days" in html
 
 
 def test_the_confidence_line_is_absent_when_the_engine_returns_none(
@@ -361,5 +404,5 @@ def test_the_confidence_line_is_absent_when_the_engine_returns_none(
     literal ``$bias_confidence`` leaks into the page."""
     monkeypatch.setattr(rendering, "signal_confidence", lambda *a, **k: None)
     html = rendered(**OPEN, live=(150.0, 148.0, 152.0))
-    assert "Up 5d later:" not in html
+    assert "Past history shows" not in html
     assert "$bias_confidence" not in html

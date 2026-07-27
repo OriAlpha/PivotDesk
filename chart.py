@@ -10,6 +10,8 @@ import json
 
 import pandas as pd
 
+from templates import js_literal
+
 
 def render_chart_html(
     daily: pd.DataFrame,
@@ -17,12 +19,19 @@ def render_chart_html(
     st_stop: float | None = None,
     sessions: int = 252,
     ticker: str = "",
+    target_price: float | None = None,
+    buy_lo: float | None = None,
+    buy_hi: float | None = None,
 ) -> str:
-    """Return HTML/JS snippet embedding a TradingView Lightweight Chart."""
+    """Return HTML/JS snippet embedding a TradingView Lightweight Chart.
+
+    All of *daily* is embedded so the chart can scroll through the full
+    history; *sessions* only sets the initial visible window.
+    """
     if daily is None or daily.empty:
         return '<div class="panelbox" style="margin-top:20px;padding:20px;text-align:center;color:var(--muted);">No chart data available.</div>'
 
-    df = daily.tail(sessions).copy()
+    df = daily.copy()
 
     candles = []
     volume = []
@@ -66,14 +75,28 @@ def render_chart_html(
         levels.append(
             {"title": "ST STOP", "price": st_stop, "color": "#6FA4FF", "style": 3}
         )
+    if target_price and target_price > 0:
+        levels.append(
+            {"title": "TARGET", "price": target_price, "color": "#FFC53D", "style": 3}
+        )
+    if buy_lo and buy_lo > 0:
+        levels.append(
+            {"title": "BUY LO", "price": buy_lo, "color": "#2EE6C8", "style": 3}
+        )
+    if buy_hi and buy_hi > 0 and buy_hi != buy_lo:
+        levels.append(
+            {"title": "BUY HI", "price": buy_hi, "color": "#2EE6C8", "style": 3}
+        )
 
     candles_json = json.dumps(candles)
     volume_json = json.dumps(volume)
     levels_json = json.dumps([lvl for lvl in levels if lvl["price"] is not None])
-    clean_ticker = (ticker or "").strip().upper()
+    # Encoded rather than dropped between quotes: the ticker is user input,
+    # and an apostrophe in it would otherwise end the string literal.
+    ticker_js = js_literal((ticker or "").strip().upper())
 
     return f"""
-<details class="panelbox chart-expander" style="margin-top:20px;padding:0;">
+<details class="panelbox chart-expander" style="margin-top:20px;padding:0;" open>
   <summary style="padding:14px 20px;cursor:pointer;list-style:none;outline:none;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;user-select:none;">
     <h3 style="margin:0;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--dim);font-weight:800;text-align:center;">PIVOT & PRICE ACTION CHART</h3>
     <div id="chart-legend" style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);text-align:center;margin-top:4px;">
@@ -81,7 +104,14 @@ def render_chart_html(
     </div>
   </summary>
   <div style="padding:0 20px 18px 20px;border-top:1px solid var(--line);">
-    <div id="tv-chart" style="width:100%;height:360px;position:relative;background:#0A0E17;border-radius:10px;margin-top:16px;"></div>
+    <div style="display:flex;gap:6px;justify-content:center;margin-top:12px;">
+      <button type="button" class="tf-btn" data-days="22" style="background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--muted);border-radius:99px;padding:3px 10px;font-size:10px;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">1M</button>
+      <button type="button" class="tf-btn" data-days="66" style="background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--muted);border-radius:99px;padding:3px 10px;font-size:10px;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">3M</button>
+      <button type="button" class="tf-btn" data-days="132" style="background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--muted);border-radius:99px;padding:3px 10px;font-size:10px;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">6M</button>
+      <button type="button" class="tf-btn active-tf" data-days="252" style="background:rgba(111,164,255,.15);border:1px solid var(--price);color:var(--price);border-radius:99px;padding:3px 10px;font-size:10px;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">1Y</button>
+      <button type="button" class="tf-btn" data-days="99999" style="background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--muted);border-radius:99px;padding:3px 10px;font-size:10px;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">ALL</button>
+    </div>
+    <div id="tv-chart" style="width:100%;height:360px;position:relative;background:#0A0E17;border-radius:10px;margin-top:12px;"></div>
   </div>
 </details>
 
@@ -117,6 +147,17 @@ def render_chart_html(
       timeVisible: false,
       secondsVisible: false,
     }},
+    handleScroll: {{
+      mouseWheel: true,
+      pressedMouseMove: true,
+      horzTouchDrag: true,
+      vertTouchDrag: true,
+    }},
+    handleScale: {{
+      axisPressedMouseMove: true,
+      mouseWheel: true,
+      pinch: true,
+    }},
   }}, layoutBg);
 
   chartOpts.layout = Object.assign({{
@@ -130,6 +171,7 @@ def render_chart_html(
   const addCandles = chart.addCandlestickSeries ? chart.addCandlestickSeries.bind(chart) : (opts) => chart.addSeries(LightweightCharts.CandlestickSeries, opts);
   const addHistogram = chart.addHistogramSeries ? chart.addHistogramSeries.bind(chart) : (opts) => chart.addSeries(LightweightCharts.HistogramSeries, opts);
 
+  const candles = {candles_json};
   const candleSeries = addCandles({{
     upColor: '#2EE6C8',
     downColor: '#FF6B6B',
@@ -138,7 +180,7 @@ def render_chart_html(
     wickUpColor: '#2EE6C8',
     wickDownColor: '#FF6B6B',
   }});
-  candleSeries.setData({candles_json});
+  candleSeries.setData(candles);
 
   const volumeSeries = addHistogram({{
     priceFormat: {{ type: 'volume' }},
@@ -194,8 +236,16 @@ def render_chart_html(
     `;
   }});
 
-  const storageKey = 'pivotdesk_chart_range_' + ('{clean_ticker}' || 'default');
-  const openKey = 'pivotdesk_chart_open_' + ('{clean_ticker}' || 'default');
+  const storageKey = 'pivotdesk_chart_range_v2_' + ({ticker_js} || 'default');
+  const openKey = 'pivotdesk_chart_open_' + ({ticker_js} || 'default');
+
+  function applyDefaultRange() {{
+    const total = candles.length;
+    if (total > 0) {{
+      const fromIdx = Math.max(0, total - {sessions});
+      chart.timeScale().setVisibleLogicalRange({{ from: fromIdx, to: total - 1 }});
+    }}
+  }}
 
   function restoreVisibleRange() {{
     try {{
@@ -226,15 +276,39 @@ def render_chart_html(
         setTimeout(() => {{
           chart.applyOptions({{ width: container.clientWidth || 900 }});
           if (!restoreVisibleRange()) {{
-            chart.timeScale().fitContent();
+            applyDefaultRange();
           }}
         }}, 50);
       }}
     }});
+
+    const tfBtns = detailsEl.querySelectorAll('.tf-btn');
+    tfBtns.forEach(btn => {{
+      btn.addEventListener('click', (e) => {{
+        e.preventDefault();
+        e.stopPropagation();
+        const days = parseInt(btn.getAttribute('data-days') || '252', 10);
+        const total = candles ? candles.length : 0;
+        if (total > 0) {{
+          const fromIdx = Math.max(0, total - days);
+          chart.timeScale().setVisibleLogicalRange({{ from: fromIdx, to: total - 1 }});
+        }}
+        tfBtns.forEach(b => {{
+          b.style.background = 'rgba(255,255,255,.04)';
+          b.style.borderColor = 'var(--line)';
+          b.style.color = 'var(--muted)';
+        }});
+        btn.style.background = 'rgba(111,164,255,.15)';
+        btn.style.borderColor = 'var(--price)';
+        btn.style.color = 'var(--price)';
+      }});
+    }});
   }}
 
-  // Restore saved view state on load
-  restoreVisibleRange();
+  // Restore saved view state on load, else default to the last year
+  if (!restoreVisibleRange()) {{
+    applyDefaultRange();
+  }}
 
   // Persist zoom and pan state to sessionStorage
   chart.timeScale().subscribeVisibleLogicalRangeChange(range => {{

@@ -14,12 +14,14 @@ from __future__ import annotations
 
 import datetime as dt
 from dataclasses import dataclass
+from html import escape as html_escape
+from urllib.parse import quote
 
 import streamlit as st
 
 from backtest import signal_confidence
 from chart import render_chart_html
-from config import IST
+from config import IST, MARKET_CLOSE
 from data import (
     completed_sessions,
     fetch_daily_resilient,
@@ -28,13 +30,14 @@ from data import (
     market_status,
 )
 from indicators import compute_indicators
-from templates import HTML, HTML_ERROR
+from templates import HTML, HTML_ERROR, js_literal
 from verdict import (
     OVERBOUGHT_RSI,
     action_card,
     entry_verdict,
     fmt,
     move_context,
+    move_phrase_text,
     plain_summary,
 )
 
@@ -46,6 +49,7 @@ __all__ = [
     "action_card",
     "compose_read",
     "entry_verdict",
+    "expected_range_label",
     "fmt",
     "move_context",
     "plain_summary",
@@ -64,6 +68,43 @@ __all__ = [
 def compose_read() -> str:
     """Data attribution footer."""
     return "Data: Yahoo Finance"
+
+
+def reload_url(ticker: str, entry: float, positions_str: str = "") -> str:
+    """The self-link that forces a refetch.
+
+    Both the ticker and the position book arrive straight from the query
+    string, so each value is percent-encoded and the finished URL escaped for
+    the ``href`` it lands in — otherwise a quote in either one closes the
+    attribute early and whatever follows becomes markup.
+    """
+    url = f"?ticker={quote(ticker, safe='')}&entry={entry}"
+    if positions_str:
+        # ':' and ',' separate the book's own fields; they are legal here and
+        # leaving them be keeps the URL readable.
+        url += f"&positions={quote(positions_str, safe=':,')}"
+    return html_escape(url + "&reload=1", quote=True)
+
+
+def expected_range_label(now: dt.datetime, is_open: bool, holiday: bool = False) -> str:
+    """Name the session the ATR range applies to.
+
+    Once the bell has rung the range describes the *next* open, not the one
+    that just finished. Future holidays are unknowable — only weekends are
+    skipped — so the worst case is naming a day the exchange turns out to be
+    shut, never a day already in the past.
+    """
+    session = now.date()
+    if holiday or (not is_open and now.time() > MARKET_CLOSE):
+        session += dt.timedelta(days=1)
+    while session.weekday() >= 5:
+        session += dt.timedelta(days=1)
+
+    if session == now.date():
+        return "Exp Today"
+    if session == now.date() + dt.timedelta(days=1):
+        return "Exp Tomorrow"
+    return f"Exp {session:%A}"
 
 
 # ---------------------------------------------------------------- price view
@@ -255,10 +296,9 @@ def render_error(
     positions_str: str = "",
 ) -> None:
     """Render a minimal error page inside an iframe."""
-    pos_qp = f"&positions={positions_str}" if positions_str else ""
     html = HTML_ERROR.safe_substitute(
-        error_msg=error_msg,
-        reload_url=f"?ticker={ticker}&entry={entry}{pos_qp}&reload=1",
+        error_msg=html_escape(error_msg),
+        reload_url=reload_url(ticker, entry, positions_str),
     )
     st.iframe(html, height=350)
 
@@ -272,7 +312,6 @@ def render(
     positions_str: str = "",
     risk_budget: float = 0.0,
     total_visits: int = 0,
-    device_count: int = 1,
 ) -> None:
     """Build and display the full dashboard for *ticker*."""
     entry_val = float(entry) if entry is not None else 0.0
@@ -335,6 +374,7 @@ def render(
     """
 
     # ---- change block (never fabricate a +0.00 for a price we could not fetch)
+    chg_pct = 0.0
     move_ctx_html = ""
     if pv.stale:
         chg_html = (
@@ -440,13 +480,106 @@ def render(
         ticker.replace(".NS", ""), score, ind.st_up, ind.rsi_val, verdict
     )
 
+    # ---- 6-segment score gauge
+    gauge_dots = []
+    for i in range(1, 7):
+        active_cls = f"active {bias_cls}" if i <= score else ""
+        gauge_dots.append(f'<span class="dot-seg {active_cls}"></span>')
+    score_gauge_html = f'<div class="score-gauge">{"".join(gauge_dots)}</div>'
+
+    # ---- Risk-to-Reward (R:R) Ratio
+    downside = price - ind.st_stop if (ind.st_stop and price > ind.st_stop) else 0.0
+    if piv.get("R1") and piv["R1"] > price:
+        target = piv["R1"]
+        target_lbl = "R1"
+    elif piv.get("R2") and piv["R2"] > price:
+        target = piv["R2"]
+        target_lbl = "R2"
+    else:
+        target = price * 1.05
+        target_lbl = "+5%"
+    upside = target - price if target > price else 0.0
+    if downside > 0 and upside > 0:
+        rr_val = upside / downside
+        caution_tag = (
+            ' <span style="color:var(--pp);font-weight:700">⚠️ Target too close</span>'
+            if rr_val < 1.0
+            else ""
+        )
+        total_dist = target - ind.st_stop
+        current_dist = price - ind.st_stop
+        prog_pct = (
+            max(0.0, min(100.0, current_dist / total_dist * 100))
+            if total_dist > 0
+            else 0.0
+        )
+        prog_str = f" · Progress <b>{prog_pct:.0f}%</b>"
+        rr_str = f"Target <b>{target_lbl} ₹{fmt(target)}</b> (R:R <b>1:{rr_val:.1f}</b>{caution_tag}){prog_str}"
+    else:
+        rr_str = ""
+
+    ph_tag = (
+        ' <span class="sc-badge up" style="font-size:9px;padding:1px 5px;margin-left:4px;">🚀 Broken</span>'
+        if price > ph
+        else ""
+    )
+    pl_tag = (
+        ' <span class="sc-badge dn" style="font-size:9px;padding:1px 5px;margin-left:4px;">🔻 Broken</span>'
+        if price < pl
+        else ""
+    )
+
+    rsi_bar = (
+        f'<div style="position:relative;width:100%;height:4px;background:rgba(255,255,255,.1);border-radius:99px;margin-top:6px;overflow:hidden;">'
+        f'<div style="position:absolute;left:{min(98.0, max(2.0, ind.rsi_val)):.1f}%;top:50%;transform:translate(-50%,-50%);width:7px;height:7px;'
+        f'background:var(--{"pp" if 30 < ind.rsi_val < 70 else ("sup" if ind.rsi_val >= 70 else "res")});border-radius:50%;box-shadow:0 0 6px currentColor;"></div></div>'
+    )
+
+    # ---- Multi-Timeframe Trend Alignment (Daily + Weekly)
+    daily_up = price > ind.sma50
+    weekly_up = price > ind.weekly_pp if ind.weekly_pp else False
+    if daily_up and weekly_up:
+        mtf_badge = '<div style="margin-top:8px;"><span class="sc-badge up">Daily 🟢 + Weekly 🟢 Trend Aligned</span></div>'
+    elif not daily_up and not weekly_up:
+        mtf_badge = '<div style="margin-top:8px;"><span class="sc-badge dn">Daily 🔴 + Weekly 🔴 Downtrend Aligned</span></div>'
+    else:
+        mtf_badge = '<div style="margin-top:8px;"><span class="sc-badge warn">Daily & Weekly Mixed Alignment</span></div>'
+
+    vol_spike_html = (
+        f'<div style="margin-top:8px;"><span class="sc-badge up warn-flash" style="font-size:10px;padding:3px 9px;">🔥 High Volume Spike ({ind.vol_ratio:.1f}× 30D avg)</span></div>'
+        if ind.vol_ratio >= 1.5
+        else ""
+    )
+
+    if rng_pct >= 95:
+        rng_badge = ' <span class="sc-badge up">🚀 52W High</span>'
+    elif rng_pct <= 10:
+        rng_badge = ' <span class="sc-badge dn">🛡️ 52W Support</span>'
+    else:
+        rng_badge = ""
+
+    macd_sub = "momentum building" if ind.macd_building else "momentum cooling"
+    vol_cls = "dn" if ind.vol_ratio < 0.8 else ("up" if ind.vol_ratio > 1.2 else "warn")
+    vol_sub = (
+        "below average"
+        if ind.vol_ratio < 0.8
+        else ("above average" if ind.vol_ratio > 1.2 else "in line")
+    )
+
+    exp_lo = price - ind.atr_val if price else 0.0
+    exp_hi = price + ind.atr_val if price else 0.0
+    atr_pct_val = ind.atr_val / price * 100 if price else 0.0
+    exp_label = expected_range_label(now, is_open, holiday)
+    exp_range_html = f'<div class="sub mono" style="margin-top:4px;color:var(--muted);font-size:11px;">{exp_label}: ₹{fmt(exp_lo)} – ₹{fmt(exp_hi)} (±{atr_pct_val:.1f}%)</div>'
+
     # ---- final HTML assembly
-    pos_qp = f"&positions={positions_str}" if positions_str else ""
+    symbol = ticker.replace(".NS", "")
     html = HTML.safe_substitute(
-        name=ticker.replace(".NS", "") + " · NSE",
+        name=html_escape(symbol + " · NSE"),
+        symbol_js=js_literal(symbol),
         mkt_label=f"{mkt_label} · STALE" if pv.stale else mkt_label,
         reload_cls=reload_cls,
-        reload_url=f"?ticker={ticker}&entry={entry_val}{pos_qp}&reload=1",
+        reload_url=reload_url(ticker, entry_val, positions_str),
         dot_color=(
             "var(--pp)" if pv.stale else ("var(--sup)" if is_open else "var(--dim)")
         ),
@@ -454,9 +587,13 @@ def render(
         ph=fmt(ph),
         pl=fmt(pl),
         pc=fmt(pc),
+        ph_tag=ph_tag,
+        pl_tag=pl_tag,
         price=fmt(price),
         px_cls="stale" if pv.stale else "",
         chg_html=chg_html,
+        exp_range_html=exp_range_html,
+        vol_spike_html=vol_spike_html,
         pp=fmt(piv["PP"]),
         r1=fmt(piv["R1"]),
         r2=fmt(piv["R2"]),
@@ -468,13 +605,28 @@ def render(
         wpp=fmt(ind.weekly_pp),
         returns_html="".join(rets),
         rng_pct=f"{rng_pct:.0f}",
+        rng_badge=rng_badge,
         bias_label=bias_label,
         bias_cls=bias_cls,
+        score_gauge=score_gauge_html,
+        mtf_badge=mtf_badge,
         bias_n=str(score),
         bias_caution=bias_caution,
         bias_chips=bias_chips,
         bias_confidence=bias_confidence,
-        action_card=action_card(verdict, summary_sentence, stale=pv.stale),
+        action_card=action_card(
+            verdict,
+            summary_sentence,
+            stale=pv.stale,
+            move_phrase=""
+            if pv.stale
+            else move_phrase_text(chg_pct, ind.atr_val / price * 100 if price else 0.0),
+            atr_pct=0.0 if pv.stale else (ind.atr_val / price * 100 if price else 0.0),
+            conf_pct=pct if conf else None,
+            conf_n=conf.n if conf else 0,
+            conf_avg=conf.avg_return if conf else 0.0,
+            rr_str=rr_str,
+        ),
         move_ctx=move_ctx_html,
         day_range_html=day_range_html,
         data_banner=(
@@ -497,10 +649,10 @@ def render(
         ma_s=ma_s,
         rsi_v=f"{ind.rsi_val:.0f}",
         rsi_cls=rsi_cls,
-        rsi_s=rsi_s,
+        rsi_s=f'<span class="sc-badge {rsi_cls}">{rsi_s}</span>{rsi_bar}',
         macd_v="Bullish" if ind.macd_bull else "Bearish",
         macd_cls="up" if ind.macd_bull else "dn",
-        macd_s="momentum building" if ind.macd_building else "momentum cooling",
+        macd_s=f'<span class="sc-badge {"up" if ind.macd_bull else "dn"}">{macd_sub}</span>',
         st_v="Buy" if ind.st_up else "Sell",
         st_cls="up" if ind.st_up else "dn",
         st_stop=fmt(ind.st_stop),
@@ -510,14 +662,17 @@ def render(
         vol_cls=(
             "dn" if ind.vol_ratio < 0.8 else ("up" if ind.vol_ratio > 1.2 else "warn")
         ),
-        vol_s=(
-            "below average"
-            if ind.vol_ratio < 0.8
-            else ("above average" if ind.vol_ratio > 1.2 else "in line")
+        vol_s=f'<span class="sc-badge {vol_cls}">{vol_sub}</span>',
+        chart_html=render_chart_html(
+            daily,
+            piv,
+            st_stop=ind.st_stop,
+            ticker=ticker,
+            target_price=target,
+            buy_lo=verdict.zone_lo,
+            buy_hi=verdict.zone_hi,
         ),
-        chart_html=render_chart_html(daily, piv, st_stop=ind.st_stop, ticker=ticker),
         read=compose_read(),
         visit_count=f"{total_visits:,}",
-        device_count=str(device_count),
     )
-    st.iframe(html, height=1550)
+    st.iframe(html, height=1690)

@@ -10,7 +10,20 @@ than raising, so a placeholder added to a template but dropped from the
 substitute call would silently leak. The smoke test guards against that.
 """
 
+import json
 from string import Template
+
+
+def js_literal(value: str) -> str:
+    """Encode *value* as a JS string literal for an inline ``<script>``.
+
+    ``json.dumps`` on its own is not enough. The HTML parser looks for
+    ``</script>`` without regard for JavaScript quoting, so a ticker
+    containing one would end the block early and spill the rest onto the
+    page as markup; escaping the slash keeps it inside the string.
+    """
+    return json.dumps(value).replace("</", "<\\/")
+
 
 HTML = Template(
     r"""<!DOCTYPE html>
@@ -43,7 +56,9 @@ transition:all 0.2s ease;margin-right:8px;display:flex;align-items:center;gap:4p
 .hero .px.stale{color:var(--muted);text-shadow:none}
 .hero .chg{font-size:15px;margin-top:8px}
 .hero .chg.stale{color:var(--pp);font-size:12.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
-.spectrum{position:relative;margin:0 8px 44px;height:114px}
+.spectrum{position:relative;margin:0 8px 56px;height:114px}
+.tick[data-tip]{position:absolute;cursor:pointer}
+.tick[data-tip]:hover::after{content:attr(data-tip);position:absolute;top:100%;left:50%;transform:translateX(-50%);background:#0D1527;border:1px solid var(--price);color:var(--text);padding:5px 11px;border-radius:6px;font-size:10.5px;white-space:nowrap;z-index:9999;pointer-events:none;box-shadow:0 6px 16px rgba(0,0,0,.8);margin-top:28px;font-family:'IBM Plex Mono',monospace}
 .band{position:absolute;left:0;right:0;top:50px;height:14px;border-radius:99px;
 background:linear-gradient(90deg,#2EE6C8 0%,#1C7F71 22%,#2A3B5E 44%,#77602A 56%,#8F4040 78%,#FF6B6B 100%);
 box-shadow:inset 0 1px 3px rgba(0,0,0,.5)}
@@ -57,26 +72,30 @@ box-shadow:inset 0 1px 3px rgba(0,0,0,.5)}
 .marker .tag{background:var(--price);color:#08101F;font-weight:800;font-size:13px;padding:5px 10px;border-radius:8px;
 box-shadow:0 0 22px rgba(111,164,255,.6)}
 .marker .stem{width:2px;height:32px;background:var(--price);margin:2px auto 0;border-radius:2px}
-.returns{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:30px}
-.ret{background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:7px 15px;font-size:12.5px}
+.returns{display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap;margin-bottom:30px}
+.ret{background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:6px 14px;font-size:12.5px;transition:all 0.2s ease;cursor:default;display:inline-flex;align-items:center}
+.ret:hover{background:rgba(255,255,255,.05);border-color:rgba(111,164,255,.35);box-shadow:0 0 12px rgba(111,164,255,.2);transform:translateY(-1px)}
 .ret span{color:var(--dim);font-weight:800;margin-right:7px}
+.ret .sc-badge{margin-top:0;margin-left:6px}
 .verdict{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
 @media(max-width:760px){.verdict{grid-template-columns:1fr}}
-.vcard{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px 20px;text-align:center;display:flex;flex-direction:column;justify-content:center;align-items:center;height:100%}
+.vcard{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px 20px;text-align:center;display:flex;flex-direction:column;justify-content:center;align-items:center;height:100%;transition:all 0.25s ease}
+.vcard:hover{border-color:rgba(111,164,255,.25);box-shadow:0 8px 24px rgba(0,0,0,.3)}
 .vcard .k{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--dim);font-weight:800;margin-bottom:8px}
 .vcard .big{font-size:24px;font-weight:800}
 .vcard .sub2{font-size:12px;color:var(--muted);margin-top:5px;font-weight:600;text-align:center}
 .sigchips{display:flex;flex-wrap:wrap;gap:5px;justify-content:center;margin-top:10px}
 .sigchips span{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:700;
-padding:3px 8px;border-radius:99px;border:1px solid;letter-spacing:.04em;white-space:nowrap}
+padding:3px 8px;border-radius:99px;border:1px solid;letter-spacing:.04em;white-space:nowrap;transition:all 0.2s ease}
 .sigchips span.on{color:var(--sup);border-color:rgba(46,230,200,.35);background:rgba(46,230,200,.07)}
 .sigchips span.off{color:var(--res);border-color:rgba(255,107,107,.30);background:rgba(255,107,107,.06)}
 .conf{font-size:11px;color:var(--dim);margin-top:9px;font-weight:600;line-height:1.4}
 .conf b{font-weight:800}
-.acard{border:1px solid var(--line);border-radius:16px;padding:16px 22px;text-align:center;margin-bottom:16px;background:var(--panel)}
+.acard{border:1px solid var(--line);border-radius:16px;padding:16px 22px;text-align:center;margin-bottom:16px;background:var(--panel);transition:all 0.25s ease}
 .acard.up{border-color:rgba(46,230,200,.4);background:linear-gradient(180deg,rgba(46,230,200,.05),transparent 62%),var(--panel)}
 .acard.warn{border-color:rgba(255,197,61,.4);background:linear-gradient(180deg,rgba(255,197,61,.05),transparent 62%),var(--panel)}
 .acard.dn{border-color:rgba(255,107,107,.4);background:linear-gradient(180deg,rgba(255,107,107,.05),transparent 62%),var(--panel)}
+.acard:hover{box-shadow:0 8px 28px rgba(0,0,0,.35);border-color:rgba(111,164,255,.35)}
 .acard .k{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--dim);font-weight:800;margin-bottom:6px}
 .asum{font-size:17.5px;font-weight:800;line-height:1.4;color:var(--text);max-width:640px;margin:0 auto}
 .asum .em{margin-right:8px}
@@ -87,8 +106,9 @@ padding:3px 8px;border-radius:99px;border:1px solid;letter-spacing:.04em;white-s
 .movectx b{color:var(--muted);font-weight:700}
 .grid{display:grid;grid-template-columns:340px 1fr;gap:16px;align-items:stretch}
 @media(max-width:760px){.grid{grid-template-columns:1fr}}
-.panelbox{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px 20px;display:flex;flex-direction:column}
-.panelbox h3{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--dim);font-weight:800;margin-bottom:13px}
+.panelbox{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px 20px;display:flex;flex-direction:column;transition:all 0.25s ease}
+.panelbox:hover{border-color:rgba(111,164,255,.2);box-shadow:0 8px 24px rgba(0,0,0,.25)}
+.panelbox h3{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--dim);font-weight:800;margin-bottom:13px;text-align:center}
 .chart-expander summary::-webkit-details-marker,.chart-expander summary::marker{display:none !important;content:"" !important}
 .chart-expander summary{list-style:none !important;transition:background-color 0.2s ease;border-radius:16px}
 .chart-expander summary:hover{background-color:rgba(255,255,255,.03)}
@@ -103,17 +123,30 @@ padding:3px 8px;border-radius:99px;border:1px solid;letter-spacing:.04em;white-s
 .lr-w .nm,.lr-w .v{color:var(--dim)}
 .sgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;flex:1}
 @media(max-width:560px){.sgrid{grid-template-columns:1fr 1fr}}
-.sc{background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:12px;padding:14px 13px;text-align:center;display:flex;flex-direction:column;justify-content:center}
+.sc{background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:12px;padding:14px 13px;text-align:center;display:flex;flex-direction:column;justify-content:center;transition:all 0.2s ease}
+.sc:hover{background:rgba(255,255,255,.05);border-color:rgba(111,164,255,.3)}
 .sc .k{font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);font-weight:800;margin-bottom:6px}
 .sc .v{font-size:17px;font-weight:800}
 .sc .s{font-size:10.5px;color:var(--muted);margin-top:4px;font-weight:600}
+.sc-badge{display:inline-block;padding:2px 7px;border-radius:99px;font-size:9.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;margin-top:5px;align-self:center}
+.sc-badge.up{background:rgba(46,230,200,.12);color:var(--sup);border:1px solid rgba(46,230,200,.3);box-shadow:0 0 8px rgba(46,230,200,.2)}
+.sc-badge.dn{background:rgba(255,107,107,.12);color:var(--res);border:1px solid rgba(255,107,107,.3);box-shadow:0 0 8px rgba(255,107,107,.2)}
+.sc-badge.warn{background:rgba(255,197,61,.12);color:var(--pp);border:1px solid rgba(255,197,61,.3);box-shadow:0 0 8px rgba(255,197,61,.2)}
+.score-gauge{display:flex;gap:4px;justify-content:center;margin:6px 0 8px}
+.score-gauge .dot-seg{width:22px;height:4px;border-radius:99px;background:rgba(255,255,255,.1);transition:all 0.3s ease}
+.copy-btn{background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--muted);border-radius:6px;padding:4px 12px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;transition:all 0.2s ease}
+.copy-btn:hover{background:rgba(111,164,255,.15);border-color:var(--price);color:var(--price)}
+.score-gauge .dot-seg.active.up{background:var(--sup);box-shadow:0 0 8px rgba(46,230,200,.6)}
+.score-gauge .dot-seg.active.warn{background:var(--pp);box-shadow:0 0 8px rgba(255,197,61,.6)}
+.score-gauge .dot-seg.active.dn{background:var(--res);box-shadow:0 0 8px rgba(255,107,107,.6)}
 .rc{background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:12px;
-padding:11px 16px;margin-bottom:9px;display:flex;align-items:center;justify-content:space-between;flex:1}
+padding:11px 16px;margin-bottom:9px;display:flex;align-items:center;justify-content:space-between;flex:1;transition:all 0.2s ease}
+.rc:hover{background:rgba(255,255,255,.05);border-color:rgba(111,164,255,.3)}
 .rc:last-child{margin-bottom:0}
 .rc .k{font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);font-weight:800}
 .rc .v{font-size:16px;font-weight:800;color:var(--text)}
 .up{color:var(--sup)}.dn{color:var(--res)}.warn{color:var(--pp)}
-.read{margin-top:18px;border-top:1px solid var(--line);padding-top:12px;text-align:center;color:var(--dim);font-weight:600;font-size:11px;letter-spacing:.04em;text-transform:uppercase}
+.read{margin-top:18px;border-top:1px solid var(--line);padding-top:12px;text-align:center;font-size:10px;color:var(--dim);letter-spacing:.06em}
 .day-range-box{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:10px;font-size:11px;color:var(--muted)}
 .day-range-box .lbl{font-family:'IBM Plex Mono',monospace;font-weight:500}
 .day-range-box .bar-bg{position:relative;width:140px;height:5px;background:#1E2C48;border-radius:99px;box-shadow:inset 0 1px 2px rgba(0,0,0,.3)}
@@ -130,6 +163,8 @@ font-size:11.5px;font-weight:800;letter-spacing:.05em}
   animation: pulse-warn 1.5s infinite !important;
   font-weight: 800 !important;
 }
+.focus-btn{background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--muted);border-radius:99px;padding:3px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;transition:all 0.2s ease;margin-left:8px}
+.focus-btn:hover{background:rgba(111,164,255,.15);border-color:var(--price);color:var(--price)}
 @media(max-width:480px){
   .wrap{padding:10px 8px 20px}
   .top{flex-direction:column;gap:8px;text-align:center}
@@ -138,41 +173,111 @@ font-size:11.5px;font-weight:800;letter-spacing:.05em}
   .tick .lab{font-size:10px;top:-18px}
   .marker .tag{font-size:11px;padding:3px 6px}
 }
-</style></head><body><div class="wrap">
+</style>
+<script>
+window.FOCUS_KEY = 'pivotdesk_focus';
+// Below this the layout is already single-column, so the page is long enough
+// that focus mode earns its keep. Matches the .grid/.verdict media query.
+window.FOCUS_NARROW = '(max-width: 760px)';
+
+window.setFocusMode = function(isFocus) {
+  if (!document.body) return;
+  document.body.classList.toggle('focus-active', isFocus);
+  document.documentElement.classList.toggle('focus-active', isFocus);
+  const wrap = document.querySelector('.wrap');
+  if (wrap) wrap.classList.toggle('focus-active', isFocus);
+
+  const targets = document.querySelectorAll('.verdict, .grid, .chart-expander');
+  targets.forEach(el => {
+    el.style.display = isFocus ? 'none' : '';
+  });
+
+  const btn = document.querySelector('.focus-btn');
+  if (btn) {
+    if (isFocus) {
+      btn.innerText = '👁️ Full Mode';
+      btn.style.borderColor = 'var(--price)';
+      btn.style.color = 'var(--price)';
+      btn.style.background = 'rgba(111,164,255,.2)';
+    } else {
+      btn.innerText = '👁️ Focus Mode';
+      btn.style.borderColor = 'var(--line)';
+      btn.style.color = 'var(--muted)';
+      btn.style.background = 'rgba(255,255,255,.05)';
+    }
+  }
+
+  if (window.syncFrameHeight) window.syncFrameHeight();
+  // The chart measures itself on resize; it cannot do that while hidden, so
+  // nudge it once it is back on screen.
+  if (!isFocus) {
+    setTimeout(() => window.dispatchEvent(new Event('resize')), 60);
+  }
+};
+
+window.toggleFocusMode = function() {
+  const isFocus = !(document.body && document.body.classList.contains('focus-active'));
+  window.setFocusMode(isFocus);
+  // Remember the choice: the dashboard fragment rebuilds this page every 60s.
+  try { sessionStorage.setItem(window.FOCUS_KEY, isFocus ? 'on' : 'off'); } catch (err) {}
+};
+
+document.addEventListener('click', function(e) {
+  if (e.target) {
+    const focusBtn = e.target.closest('.focus-btn');
+    if (focusBtn) {
+      e.preventDefault();
+      window.toggleFocusMode();
+      return;
+    }
+    const copyBtn = e.target.closest('.copy-btn');
+    if (copyBtn) {
+      e.preventDefault();
+      if (window.copyTradePlan) window.copyTradePlan();
+      return;
+    }
+  }
+});
+</script>
+</head><body><div class="wrap">
 <div class="top"><div class="brand">Pivot<em>Desk</em></div>
-<div class="mkt"><a href="$reload_url" target="_parent" class="reload-lnk $reload_cls">🔄 Reload</a><span class="dot"></span><span class="mono">$mkt_label</span></div></div>
+<div class="mkt"><a href="$reload_url" target="_parent" class="reload-lnk $reload_cls">🔄 Reload</a><button type="button" class="focus-btn">👁️ Focus Mode</button><span class="dot"></span><span class="mono">$mkt_label</span></div></div>
 <div class="hero"><h1>$name</h1>
 <div class="sub mono">Prev: H $ph · L $pl · C $pc</div>
+$exp_range_html
 <div class="px mono $px_cls">₹$price</div>
 $chg_html
 $move_ctx
 $day_range_html
+$vol_spike_html
 </div>
 $data_banner
 <div class="spectrum">
 <div class="band"></div>
-<div class="tick t-s2"><span class="lab">S2</span><span class="val mono">$s2</span></div>
-<div class="tick t-s1"><span class="lab">S1</span><span class="val mono">$s1</span></div>
-<div class="tick t-pp"><span class="lab">PP</span><span class="val mono">$pp</span></div>
-<div class="tick t-r1"><span class="lab">R1</span><span class="val mono">$r1</span></div>
-<div class="tick t-r2"><span class="lab">R2</span><span class="val mono">$r2</span></div>
+<div class="tick t-s2" data-tip="S2 ₹$s2 · Support 2 Zone"><span class="lab">S2</span><span class="val mono">$s2</span></div>
+<div class="tick t-s1" data-tip="S1 ₹$s1 · Support 1 Zone"><span class="lab">S1</span><span class="val mono">$s1</span></div>
+<div class="tick t-pp" data-tip="PP ₹$pp · Intraday Pivot Baseline"><span class="lab">PP</span><span class="val mono">$pp</span></div>
+<div class="tick t-r1" data-tip="R1 ₹$r1 · Resistance 1 Target"><span class="lab">R1</span><span class="val mono">$r1</span></div>
+<div class="tick t-r2" data-tip="R2 ₹$r2 · Resistance 2 Target"><span class="lab">R2</span><span class="val mono">$r2</span></div>
 <div class="marker"><span class="tag mono">$price</span><div class="stem"></div></div>
 </div>
 <div class="returns">$returns_html
-<span class="ret"><span>52W</span><b class="mono" style="color:var(--pp)">$rng_pct% of range</b></span></div>
+<span class="ret"><span>52W</span><b class="mono" style="color:var(--pp)">$rng_pct% of range</b>$rng_badge</span></div>
 $action_card
 <div class="verdict">
 <div class="vcard"><div class="k">Technical bias</div>
 <div class="big $bias_cls">$bias_label</div>
+$score_gauge
 <div class="sub2">$bias_n/6 signals bullish$bias_caution</div>
 <div class="sigchips">$bias_chips</div>
+$mtf_badge
 $bias_confidence</div>
 $pos_card
 </div>
 <div class="grid">
 <div class="panelbox"><h3>Reference</h3>
-<div class="rc"><span class="k">Prev High</span><span class="v mono">₹$ph</span></div>
-<div class="rc"><span class="k">Prev Low</span><span class="v mono">₹$pl</span></div>
+<div class="rc"><span class="k">Prev High</span><span class="v mono">₹$ph$ph_tag</span></div>
+<div class="rc"><span class="k">Prev Low</span><span class="v mono">₹$pl$pl_tag</span></div>
 <div class="rc"><span class="k">Prev Close</span><span class="v mono">₹$pc</span></div>
 <div class="rc"><span class="k">Weekly PP</span><span class="v mono">₹$wpp</span></div></div>
 <div class="panelbox"><h3>Swing view</h3><div class="sgrid">
@@ -184,8 +289,133 @@ $pos_card
 <div class="sc"><div class="k">Vol vs 30D</div><div class="v $vol_cls">$vol_v×</div><div class="s">$vol_s</div></div>
 </div></div></div>
 $chart_html
-<div class="read">$read · 👁️ $visit_count visits · 📱 $device_count devices</div>
-</div></body></html>"""
+<div class="read mono">$read · $visit_count views</div>
+</div>
+<script>
+window.copyTradePlan = function() {
+  const asum = document.querySelector('.asum');
+  const metaSpans = document.querySelectorAll('.ameta span');
+  const txts = [];
+  if (asum) txts.push(asum.innerText.trim());
+  metaSpans.forEach(s => {
+    const t = s.innerText.trim();
+    if (t) txts.push(t);
+  });
+  const copyText = txts.join(' · ');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(copyText).then(() => {
+      const btn = document.querySelector('.copy-btn');
+      if (btn) {
+        const orig = btn.innerText;
+        btn.innerText = '✅ Copied to Clipboard!';
+        setTimeout(() => btn.innerText = orig, 2200);
+      }
+    });
+  }
+};
+
+(function() {
+  const symbol = $symbol_js || "stock";
+  const storageKey = "pivotdesk_position_" + symbol;
+
+  document.addEventListener('change', (e) => {
+    if (e.target && e.target.form) {
+      const form = e.target.form;
+      const entryInput = form.querySelector('input[name="entry"]');
+      const qtyInput = form.querySelector('input[name="qty"]');
+      const riskInput = form.querySelector('input[name="risk"]');
+      if (entryInput || qtyInput || riskInput) {
+        const data = {
+          entry: entryInput ? entryInput.value : '',
+          qty: qtyInput ? qtyInput.value : '',
+          risk: riskInput ? riskInput.value : ''
+        };
+        try { localStorage.setItem(storageKey, JSON.stringify(data)); } catch(err) {}
+      }
+    }
+  });
+
+  try {
+    const saved = localStorage.getItem(storageKey);
+    if (saved) {
+      const data = JSON.parse(saved);
+      const entryInput = document.querySelector('input[name="entry"]');
+      const qtyInput = document.querySelector('input[name="qty"]');
+      const riskInput = document.querySelector('input[name="risk"]');
+      if (entryInput && (!entryInput.value || entryInput.value === '0.00')) entryInput.value = data.entry || '';
+      if (qtyInput && (!qtyInput.value || qtyInput.value === '0')) qtyInput.value = data.qty || '';
+      if (riskInput && (!riskInput.value || riskInput.value === '5.0')) riskInput.value = data.risk || '';
+    }
+  } catch(err) {}
+})();
+
+// Phones start focused — the full page is a long scroll on a small screen —
+// while desktops start with everything on show. An explicit toggle wins over
+// the device default for the rest of the tab's session.
+(function() {
+  let saved = null;
+  try { saved = sessionStorage.getItem(window.FOCUS_KEY); } catch (err) {}
+  const narrow = window.matchMedia
+    ? window.matchMedia(window.FOCUS_NARROW).matches
+    : document.documentElement.clientWidth <= 760;
+  if (saved === null ? narrow : saved === 'on') {
+    window.setFocusMode(true);
+  }
+})();
+
+// Streamlit gives the iframe a fixed height, which clips whatever the page
+// grows past it. Match the frame to the content instead, so the outer page
+// scrolls as one and the footer stays reachable.
+(function() {
+  let frame = null;
+  try { frame = window.frameElement; } catch (err) {}
+  if (!frame) {
+    document.documentElement.style.overflowY = 'auto';
+    return;
+  }
+
+  let applied = 0;
+  function syncHeight() {
+    // Measured off the body box, not scrollHeight: scrollHeight never reports
+    // less than the viewport, so it would ratchet up and never shrink back
+    // when focus mode or a collapsed chart removes content.
+    const h = Math.ceil(document.body.getBoundingClientRect().height);
+    if (h > 0 && h !== applied) {
+      applied = h;
+      frame.style.setProperty('height', h + 'px', 'important');
+    }
+  }
+
+  // Re-measure after the layout settles as well as immediately: the chart
+  // sizes itself a beat after its <details> opens.
+  function syncSoon() {
+    syncHeight();
+    setTimeout(syncHeight, 150);
+  }
+  window.syncFrameHeight = syncSoon;
+
+  syncHeight();
+  window.addEventListener('load', syncHeight);
+  // 'toggle' does not bubble, so the chart expander needs capture.
+  document.addEventListener('toggle', syncSoon, true);
+  const observer = window.ResizeObserver ? new ResizeObserver(syncHeight) : null;
+  if (observer) observer.observe(document.body);
+  // Web fonts and the chart library both settle after first paint.
+  [100, 400, 1200].forEach(ms => setTimeout(syncHeight, ms));
+})();
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'r' || e.key === 'R') {
+    if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
+      return;
+    }
+    e.preventDefault();
+    const reloadBtn = document.querySelector('.reload-lnk');
+    if (reloadBtn) reloadBtn.click();
+  }
+});
+</script>
+</body></html>"""
 )
 
 HTML_ERROR = Template(

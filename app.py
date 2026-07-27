@@ -8,11 +8,13 @@ market is open. Data: Yahoo Finance via yfinance. Not investment advice.
 
 from __future__ import annotations
 
+import datetime as dt
 import traceback
 
 import streamlit as st
 
-from data import fetch_daily, fetch_live_price
+from config import IST
+from data import fetch_daily, fetch_live_price, market_status
 from positions import (
     Position,
     format_positions,
@@ -122,12 +124,6 @@ st.markdown(
     width: 100% !important;
     border: none !important;
     overflow: hidden !important;
-  }
-  
-  @media (max-width: 760px) {
-    iframe {
-      min-height: 2200px !important;
-    }
   }
   
   /* Style the buttons inside columns to look like premium pills */
@@ -439,8 +435,21 @@ with st.expander("POSITIONS", expanded=False):
 # ---------------------------------------------------------------- dashboard
 
 
-@st.fragment(run_every="60s")
+# Only a live session produces new prices. Outside one the whole page — chart
+# included — was being rebuilt every minute to redraw the same numbers, so the
+# beat slows down after the bell and picks back up at the next open.
+MARKET_OPEN_AT_LOAD, _ = market_status(dt.datetime.now(IST))
+REFRESH_EVERY = "60s" if MARKET_OPEN_AT_LOAD else "5m"
+
+
+@st.fragment(run_every=REFRESH_EVERY)
 def dashboard() -> None:
+    # run_every was fixed when the script last ran in full, and a fragment
+    # rerun does not re-read it. A tab left open across the bell needs an app
+    # rerun to pick up the other cadence.
+    if market_status(dt.datetime.now(IST))[0] != MARKET_OPEN_AT_LOAD:
+        st.rerun(scope="app")
+
     pos_str = st.query_params.get("positions", "")
     risk_str = st.query_params.get("risk", "")
     try:
@@ -452,7 +461,6 @@ def dashboard() -> None:
             positions_str=pos_str,
             risk_budget=float(risk_str) if risk_str else 0.0,
             total_visits=app_state.total_visits,
-            device_count=app_state.device_count,
         )
     except ValueError as e:
         st.error(str(e))
