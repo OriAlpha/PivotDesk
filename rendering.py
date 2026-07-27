@@ -27,10 +27,11 @@ from data import (
     fetch_daily_resilient,
     fetch_live_price,
     is_holiday,
+    last_session_date,
     market_status,
 )
 from indicators import compute_indicators
-from templates import HTML, HTML_ERROR, js_literal
+from templates import CHART_PAGE, HTML, HTML_ERROR, js_literal
 from verdict import (
     OVERBOUGHT_RSI,
     action_card,
@@ -55,11 +56,16 @@ __all__ = [
     "plain_summary",
     "position_card",
     "render",
+    "render_chart_panel",
     "render_error",
     "resolve_price",
     "signal_chips",
     "technical_score",
 ]
+
+
+# Where render() leaves the chart markup for render_chart_panel() to pick up.
+CHART_STATE_KEY = "pivotdesk_chart_html"
 
 
 # ---------------------------------------------------------------- helpers
@@ -289,6 +295,26 @@ def position_card(
 # ---------------------------------------------------------------- render entry points
 
 
+def render_chart_panel(total_visits: int = 0) -> None:
+    """Draw the chart frame from the markup ``render()`` last produced.
+
+    Called from outside the refreshing fragment, so a fragment rerun leaves
+    this frame alone — the chart keeps its zoom, its crosshair and its
+    timeframe selection instead of being rebuilt every minute. The candles
+    only change when a session completes, so redrawing on full script runs is
+    as fresh as the data ever gets.
+    """
+    chart_html = st.session_state.get(CHART_STATE_KEY)
+    if not chart_html:
+        return
+    html = CHART_PAGE.safe_substitute(
+        chart_html=chart_html,
+        read=compose_read(),
+        visit_count=f"{total_visits:,}",
+    )
+    st.iframe(html, height=520)
+
+
 def render_error(
     ticker: str,
     error_msg: str,
@@ -311,7 +337,6 @@ def render(
     qty: float = 0.0,
     positions_str: str = "",
     risk_budget: float = 0.0,
-    total_visits: int = 0,
 ) -> None:
     """Build and display the full dashboard for *ticker*."""
     entry_val = float(entry) if entry is not None else 0.0
@@ -324,12 +349,7 @@ def render(
 
     # A weekday with no session row of its own is an NSE holiday: treat it as
     # closed so we neither chase a live quote nor pulse an "open" indicator.
-    daily_last = (
-        daily.index[-1].astimezone(IST).date()
-        if daily.index.tz
-        else daily.index[-1].date()
-    )
-    holiday = not daily_stale and is_holiday(daily_last, now)
+    holiday = not daily_stale and is_holiday(last_session_date(daily), now)
     if holiday:
         is_open, mkt_label = False, "MARKET CLOSED · NSE HOLIDAY"
 
@@ -663,16 +683,19 @@ def render(
             "dn" if ind.vol_ratio < 0.8 else ("up" if ind.vol_ratio > 1.2 else "warn")
         ),
         vol_s=f'<span class="sc-badge {vol_cls}">{vol_sub}</span>',
-        chart_html=render_chart_html(
-            daily,
-            piv,
-            st_stop=ind.st_stop,
-            ticker=ticker,
-            target_price=target,
-            buy_lo=verdict.zone_lo,
-            buy_hi=verdict.zone_hi,
-        ),
-        read=compose_read(),
-        visit_count=f"{total_visits:,}",
     )
     st.iframe(html, height=1690)
+
+    # The chart is drawn in its own frame outside the refreshing fragment, so
+    # it survives the 60s beat instead of being torn down and rebuilt. Handing
+    # the markup over here keeps it on the single pass that already has the
+    # indicators and the verdict in hand.
+    st.session_state[CHART_STATE_KEY] = render_chart_html(
+        daily,
+        piv,
+        st_stop=ind.st_stop,
+        ticker=ticker,
+        target_price=target,
+        buy_lo=verdict.zone_lo,
+        buy_hi=verdict.zone_hi,
+    )

@@ -25,6 +25,51 @@ def js_literal(value: str) -> str:
     return json.dumps(value).replace("</", "<\\/")
 
 
+# Streamlit gives the iframe a fixed height, which clips whatever the page
+# grows past it. Match the frame to the content instead, so the outer page
+# scrolls as one and nothing at the bottom is cut off. Shared by both
+# templates — the error page can overflow 350px just as easily.
+_AUTO_HEIGHT_JS = """
+(function() {
+  let frame = null;
+  try { frame = window.frameElement; } catch (err) {}
+  if (!frame) {
+    document.documentElement.style.overflowY = 'auto';
+    return;
+  }
+
+  let applied = 0;
+  function syncHeight() {
+    // Measured off the body box, not scrollHeight: scrollHeight never reports
+    // less than the viewport, so it would ratchet up and never shrink back
+    // when focus mode or a collapsed chart removes content.
+    const h = Math.ceil(document.body.getBoundingClientRect().height);
+    if (h > 0 && h !== applied) {
+      applied = h;
+      frame.style.setProperty('height', h + 'px', 'important');
+    }
+  }
+
+  // Re-measure after the layout settles as well as immediately: the chart
+  // sizes itself a beat after its <details> opens.
+  function syncSoon() {
+    syncHeight();
+    setTimeout(syncHeight, 150);
+  }
+  window.syncFrameHeight = syncSoon;
+
+  syncHeight();
+  window.addEventListener('load', syncHeight);
+  // 'toggle' does not bubble, so the chart expander needs capture.
+  document.addEventListener('toggle', syncSoon, true);
+  const observer = window.ResizeObserver ? new ResizeObserver(syncHeight) : null;
+  if (observer) observer.observe(document.body);
+  // Web fonts and the chart library both settle after first paint.
+  [100, 400, 1200].forEach(ms => setTimeout(syncHeight, ms));
+})();
+"""
+
+
 HTML = Template(
     r"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -176,6 +221,7 @@ font-size:11.5px;font-weight:800;letter-spacing:.05em}
 </style>
 <script>
 window.FOCUS_KEY = 'pivotdesk_focus';
+window.FOCUS_CHANNEL = 'pivotdesk_focus_channel';
 // Below this the layout is already single-column, so the page is long enough
 // that focus mode earns its keep. Matches the .grid/.verdict media query.
 window.FOCUS_NARROW = '(max-width: 760px)';
@@ -187,7 +233,7 @@ window.setFocusMode = function(isFocus) {
   const wrap = document.querySelector('.wrap');
   if (wrap) wrap.classList.toggle('focus-active', isFocus);
 
-  const targets = document.querySelectorAll('.verdict, .grid, .chart-expander');
+  const targets = document.querySelectorAll('.verdict, .grid');
   targets.forEach(el => {
     el.style.display = isFocus ? 'none' : '';
   });
@@ -220,6 +266,9 @@ window.toggleFocusMode = function() {
   window.setFocusMode(isFocus);
   // Remember the choice: the dashboard fragment rebuilds this page every 60s.
   try { sessionStorage.setItem(window.FOCUS_KEY, isFocus ? 'on' : 'off'); } catch (err) {}
+  // The chart lives in a sibling frame that this document cannot reach into,
+  // so tell it directly rather than through the DOM.
+  try { new BroadcastChannel(window.FOCUS_CHANNEL).postMessage({ focus: isFocus }); } catch (err) {}
 };
 
 document.addEventListener('click', function(e) {
@@ -288,8 +337,6 @@ $pos_card
 <div class="sc"><div class="k">ATR 14</div><div class="v mono">₹$atr_v</div><div class="s">≈$atr_pct% per day</div></div>
 <div class="sc"><div class="k">Vol vs 30D</div><div class="v $vol_cls">$vol_v×</div><div class="s">$vol_s</div></div>
 </div></div></div>
-$chart_html
-<div class="read mono">$read · $visit_count views</div>
 </div>
 <script>
 window.copyTradePlan = function() {
@@ -353,56 +400,26 @@ window.copyTradePlan = function() {
 // while desktops start with everything on show. An explicit toggle wins over
 // the device default for the rest of the tab's session.
 (function() {
-  let saved = null;
-  try { saved = sessionStorage.getItem(window.FOCUS_KEY); } catch (err) {}
-  const narrow = window.matchMedia
-    ? window.matchMedia(window.FOCUS_NARROW).matches
-    : document.documentElement.clientWidth <= 760;
-  if (saved === null ? narrow : saved === 'on') {
-    window.setFocusMode(true);
+  const mq = window.matchMedia ? window.matchMedia(window.FOCUS_NARROW) : null;
+
+  function wanted() {
+    let saved = null;
+    try { saved = sessionStorage.getItem(window.FOCUS_KEY); } catch (err) {}
+    if (saved !== null) return saved === 'on';
+    return mq ? mq.matches : document.documentElement.clientWidth <= 760;
   }
+
+  function applyDefault() { window.setFocusMode(wanted()); }
+
+  applyDefault();
+  // The frame is still at its unlaid-out width when this first runs, so a
+  // desktop briefly measures as narrow. Re-check once the layout settles, and
+  // whenever the breakpoint is crossed while no explicit choice is stored.
+  window.addEventListener('load', applyDefault);
+  if (mq && mq.addEventListener) mq.addEventListener('change', applyDefault);
 })();
 
-// Streamlit gives the iframe a fixed height, which clips whatever the page
-// grows past it. Match the frame to the content instead, so the outer page
-// scrolls as one and the footer stays reachable.
-(function() {
-  let frame = null;
-  try { frame = window.frameElement; } catch (err) {}
-  if (!frame) {
-    document.documentElement.style.overflowY = 'auto';
-    return;
-  }
-
-  let applied = 0;
-  function syncHeight() {
-    // Measured off the body box, not scrollHeight: scrollHeight never reports
-    // less than the viewport, so it would ratchet up and never shrink back
-    // when focus mode or a collapsed chart removes content.
-    const h = Math.ceil(document.body.getBoundingClientRect().height);
-    if (h > 0 && h !== applied) {
-      applied = h;
-      frame.style.setProperty('height', h + 'px', 'important');
-    }
-  }
-
-  // Re-measure after the layout settles as well as immediately: the chart
-  // sizes itself a beat after its <details> opens.
-  function syncSoon() {
-    syncHeight();
-    setTimeout(syncHeight, 150);
-  }
-  window.syncFrameHeight = syncSoon;
-
-  syncHeight();
-  window.addEventListener('load', syncHeight);
-  // 'toggle' does not bubble, so the chart expander needs capture.
-  document.addEventListener('toggle', syncSoon, true);
-  const observer = window.ResizeObserver ? new ResizeObserver(syncHeight) : null;
-  if (observer) observer.observe(document.body);
-  // Web fonts and the chart library both settle after first paint.
-  [100, 400, 1200].forEach(ms => setTimeout(syncHeight, ms));
-})();
+__AUTO_HEIGHT_JS__
 
 window.addEventListener('keydown', (e) => {
   if (e.key === 'r' || e.key === 'R') {
@@ -415,7 +432,77 @@ window.addEventListener('keydown', (e) => {
   }
 });
 </script>
-</body></html>"""
+</body></html>""".replace("__AUTO_HEIGHT_JS__", _AUTO_HEIGHT_JS)
+)
+
+CHART_PAGE = Template(
+    r"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0A0E17;--panel:rgba(20,29,48,.72);--line:#1E2C48;--text:#EDF2FB;--muted:#7E8DA8;
+--dim:#55637E;--pp:#FFC53D;--res:#FF6B6B;--sup:#2EE6C8;--price:#6FA4FF}
+*{box-sizing:border-box;margin:0;padding:0}
+html, body{background:var(--bg);color:var(--text);font-family:'Archivo',sans-serif;overflow-y:hidden}
+.mono{font-family:'IBM Plex Mono',monospace}
+.wrap{max-width:980px;margin:0 auto;padding:0 16px 28px}
+.panelbox{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px 20px;display:flex;flex-direction:column;transition:all 0.25s ease}
+.panelbox:hover{border-color:rgba(111,164,255,.2);box-shadow:0 8px 24px rgba(0,0,0,.25)}
+.panelbox h3{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--dim);font-weight:800;margin-bottom:13px;text-align:center}
+.chart-expander summary::-webkit-details-marker,.chart-expander summary::marker{display:none !important;content:"" !important}
+.chart-expander summary{list-style:none !important;transition:background-color 0.2s ease;border-radius:16px}
+.chart-expander summary:hover{background-color:rgba(255,255,255,.03)}
+.read{margin-top:18px;border-top:1px solid var(--line);padding-top:12px;text-align:center;font-size:10px;color:var(--dim);letter-spacing:.06em}
+</style>
+</head><body><div class="wrap">
+$chart_html
+<div class="read mono">$read · $visit_count views</div>
+</div>
+<script>
+// The chart is a sibling frame of the dashboard, so focus mode reaches it by
+// broadcast rather than through the DOM. Only the chart hides — the
+// attribution footer below it is the last thing on the page either way.
+(function() {
+  const KEY = 'pivotdesk_focus';
+  const details = document.querySelector('.chart-expander');
+
+  function apply(isFocus) {
+    if (details) details.style.display = isFocus ? 'none' : '';
+    if (window.syncFrameHeight) window.syncFrameHeight();
+  }
+
+  const mq = window.matchMedia ? window.matchMedia('(max-width: 760px)') : null;
+
+  function stored() {
+    let saved = null;
+    try { saved = sessionStorage.getItem(KEY); } catch (err) {}
+    if (saved !== null) return saved === 'on';
+    return mq ? mq.matches : document.documentElement.clientWidth <= 760;
+  }
+
+  function applyStored() { apply(stored()); }
+
+  applyStored();
+  // Same width race as the dashboard frame: measure again after layout.
+  window.addEventListener('load', applyStored);
+  if (mq && mq.addEventListener) mq.addEventListener('change', applyStored);
+
+  try {
+    const channel = new BroadcastChannel('pivotdesk_focus_channel');
+    channel.onmessage = (e) => {
+      if (e.data && typeof e.data.focus === 'boolean') apply(e.data.focus);
+    };
+  } catch (err) {}
+  // Backstop for browsers without BroadcastChannel: sessionStorage writes
+  // raise 'storage' in every same-origin document except the writer.
+  window.addEventListener('storage', (e) => {
+    if (!e.key || e.key === KEY) apply(stored());
+  });
+})();
+
+__AUTO_HEIGHT_JS__
+</script>
+</body></html>""".replace("__AUTO_HEIGHT_JS__", _AUTO_HEIGHT_JS)
 )
 
 HTML_ERROR = Template(
@@ -447,5 +534,9 @@ transition:all 0.2s ease;margin-right:8px;display:flex;align-items:center;gap:4p
   <h2>Data Fetch Failed</h2>
   <p>$error_msg — Yahoo may be rate-limiting. Retrying in 60s.</p>
 </div>
-</div></body></html>"""
+</div>
+<script>
+__AUTO_HEIGHT_JS__
+</script>
+</body></html>""".replace("__AUTO_HEIGHT_JS__", _AUTO_HEIGHT_JS)
 )

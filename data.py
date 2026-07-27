@@ -138,6 +138,24 @@ def fetch_live_price(ticker: str) -> tuple[float, float, float] | None:
     return None
 
 
+def last_session_date(daily: pd.DataFrame) -> dt.date:
+    """Date of the most recent row, normalised to IST."""
+    idx = daily.index[-1]
+    return idx.astimezone(IST).date() if daily.index.tz else idx.date()
+
+
+def session_is_live(daily: pd.DataFrame, daily_stale: bool, now: dt.datetime) -> bool:
+    """True when a real session is running right now.
+
+    ``market_status`` only reads the clock, so it calls an NSE holiday an open
+    day. Holidays are inferred from whether Yahoo published a row for today,
+    which needs the daily frame — hence the separate check.
+    """
+    if not market_status(now)[0]:
+        return False
+    return daily_stale or not is_holiday(last_session_date(daily), now)
+
+
 def is_holiday(daily_last: dt.date, now: dt.datetime) -> bool:
     """True when a weekday inside market hours has no session of its own.
 

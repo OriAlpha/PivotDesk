@@ -14,7 +14,13 @@ import traceback
 import streamlit as st
 
 from config import IST
-from data import fetch_daily, fetch_live_price, market_status
+from data import (
+    fetch_daily,
+    fetch_daily_resilient,
+    fetch_live_price,
+    market_status,
+    session_is_live,
+)
 from positions import (
     Position,
     format_positions,
@@ -22,7 +28,7 @@ from positions import (
     set_position,
     symbol_key,
 )
-from rendering import render, render_error
+from rendering import CHART_STATE_KEY, render, render_chart_panel, render_error
 from state import load_state, save_state
 
 # ---------------------------------------------------------------- page config
@@ -435,11 +441,27 @@ with st.expander("POSITIONS", expanded=False):
 # ---------------------------------------------------------------- dashboard
 
 
+def session_live_now() -> bool:
+    """Whether a real NSE session is running, holidays included.
+
+    The daily fetch is cached and ``render()`` makes the same call moments
+    later, so consulting it here is effectively free. If it fails outright,
+    fall back to the clock and let ``render()`` surface the error properly
+    rather than crashing the script before the page exists.
+    """
+    now = dt.datetime.now(IST)
+    try:
+        daily, daily_stale = fetch_daily_resilient(ticker)
+    except Exception:
+        return market_status(now)[0]
+    return session_is_live(daily, daily_stale, now)
+
+
 # Only a live session produces new prices. Outside one the whole page — chart
 # included — was being rebuilt every minute to redraw the same numbers, so the
 # beat slows down after the bell and picks back up at the next open.
-MARKET_OPEN_AT_LOAD, _ = market_status(dt.datetime.now(IST))
-REFRESH_EVERY = "60s" if MARKET_OPEN_AT_LOAD else "5m"
+MARKET_LIVE_AT_LOAD = session_live_now()
+REFRESH_EVERY = "60s" if MARKET_LIVE_AT_LOAD else "5m"
 
 
 @st.fragment(run_every=REFRESH_EVERY)
@@ -447,11 +469,14 @@ def dashboard() -> None:
     # run_every was fixed when the script last ran in full, and a fragment
     # rerun does not re-read it. A tab left open across the bell needs an app
     # rerun to pick up the other cadence.
-    if market_status(dt.datetime.now(IST))[0] != MARKET_OPEN_AT_LOAD:
+    if session_live_now() != MARKET_LIVE_AT_LOAD:
         st.rerun(scope="app")
 
     pos_str = st.query_params.get("positions", "")
     risk_str = st.query_params.get("risk", "")
+    # A failed render must not leave the previous chart standing next to an
+    # error message as though it were current.
+    st.session_state.pop(CHART_STATE_KEY, None)
     try:
         render(
             ticker,
@@ -460,7 +485,6 @@ def dashboard() -> None:
             qty=qty,
             positions_str=pos_str,
             risk_budget=float(risk_str) if risk_str else 0.0,
-            total_visits=app_state.total_visits,
         )
     except ValueError as e:
         st.error(str(e))
@@ -471,3 +495,6 @@ def dashboard() -> None:
 
 if ticker:
     dashboard()
+    # Outside the fragment on purpose: this frame is left alone by the 60s
+    # rerun, so the chart keeps its zoom and timeframe between refreshes.
+    render_chart_panel(total_visits=app_state.total_visits)

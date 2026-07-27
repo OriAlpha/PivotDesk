@@ -14,7 +14,9 @@ from data import (
     fetch_daily_resilient,
     fetch_live_price,
     is_holiday,
+    last_session_date,
     market_status,
+    session_is_live,
 )
 
 # 2026-07-21 is a Tuesday; 07-25 a Saturday; 07-26 a Sunday.
@@ -115,6 +117,26 @@ MON = dt.date(2026, 7, 20)
 )
 def test_holiday_detection(daily_last, when, expected, why):
     assert is_holiday(daily_last, when) is expected, why
+
+
+@pytest.mark.parametrize(
+    "daily_last,when,stale,expected,why",
+    [
+        (TUE, at(TUE, 11, 0), False, True, "ordinary weekday mid-session"),
+        (MON, at(TUE, 11, 0), False, False, "weekday with no row of its own: holiday"),
+        (TUE, at(TUE, 16, 30), False, False, "after the close"),
+        (TUE, at(SAT, 11, 0), False, False, "weekend"),
+        (MON, at(TUE, 11, 0), True, True, "stale data proves nothing about holidays"),
+    ],
+)
+def test_session_is_live_accounts_for_holidays(daily_last, when, stale, expected, why):
+    """The refresh cadence keys off this: ``market_status`` alone reads a
+    holiday as an open day and would refresh every 60s for static data."""
+    assert session_is_live(frame_ending(daily_last), stale, when) is expected, why
+
+
+def test_last_session_date_normalises_to_ist():
+    assert last_session_date(frame_ending(TUE)) == TUE
 
 
 # ---------------------------------------------------------------- resilience

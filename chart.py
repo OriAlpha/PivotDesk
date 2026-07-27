@@ -109,7 +109,7 @@ def render_chart_html(
       <button type="button" class="tf-btn" data-days="66" style="background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--muted);border-radius:99px;padding:3px 10px;font-size:10px;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">3M</button>
       <button type="button" class="tf-btn" data-days="132" style="background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--muted);border-radius:99px;padding:3px 10px;font-size:10px;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">6M</button>
       <button type="button" class="tf-btn active-tf" data-days="252" style="background:rgba(111,164,255,.15);border:1px solid var(--price);color:var(--price);border-radius:99px;padding:3px 10px;font-size:10px;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">1Y</button>
-      <button type="button" class="tf-btn" data-days="99999" style="background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--muted);border-radius:99px;padding:3px 10px;font-size:10px;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">ALL</button>
+      <button type="button" class="tf-btn" data-days="0" style="background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--muted);border-radius:99px;padding:3px 10px;font-size:10px;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">ALL</button>
     </div>
     <div id="tv-chart" style="width:100%;height:360px;position:relative;background:#0A0E17;border-radius:10px;margin-top:12px;"></div>
   </div>
@@ -287,10 +287,12 @@ def render_chart_html(
       btn.addEventListener('click', (e) => {{
         e.preventDefault();
         e.stopPropagation();
+        // data-days="0" means the whole history, hence the explicit branch
+        // rather than a sentinel large enough to always clamp to zero.
         const days = parseInt(btn.getAttribute('data-days') || '252', 10);
         const total = candles ? candles.length : 0;
         if (total > 0) {{
-          const fromIdx = Math.max(0, total - days);
+          const fromIdx = days > 0 ? Math.max(0, total - days) : 0;
           chart.timeScale().setVisibleLogicalRange({{ from: fromIdx, to: total - 1 }});
         }}
         tfBtns.forEach(b => {{

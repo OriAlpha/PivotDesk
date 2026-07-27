@@ -122,6 +122,25 @@ def test_every_supplied_value_has_a_placeholder(rendered, monkeypatch):
     assert set(supplied) == set(rendering.HTML.get_identifiers())
 
 
+def test_chart_page_is_handed_exactly_what_it_asks_for(monkeypatch):
+    """Same guard for the chart frame, which carries the footer now."""
+    supplied: dict[str, object] = {}
+    real = rendering.CHART_PAGE.safe_substitute
+
+    def spy(**kwargs):
+        supplied.update(kwargs)
+        return real(**kwargs)
+
+    monkeypatch.setattr(rendering.CHART_PAGE, "safe_substitute", spy)
+    monkeypatch.setattr(rendering.st, "iframe", lambda html, **kw: None)
+    monkeypatch.setitem(
+        rendering.st.session_state, rendering.CHART_STATE_KEY, "<div>chart</div>"
+    )
+    rendering.render_chart_panel(total_visits=7)
+
+    assert set(supplied) == set(rendering.CHART_PAGE.get_identifiers())
+
+
 # ---------------------------------------------------------------- stale price
 
 
@@ -334,9 +353,6 @@ def test_reload_url_preserves_positions():
         vol_v="",
         vol_cls="",
         vol_s="",
-        chart_html="",
-        read="",
-        visit_count="1,248",
         symbol_js='"RELIANCE"',
         reload_url="?ticker=RELIANCE.NS&entry=1200&positions=RELIANCE:1200:50,TCS:3100:10&reload=1",
     )
@@ -359,6 +375,14 @@ def test_reload_url_leaves_an_ordinary_book_readable():
     """Escaping must not mangle the separators the book is built from."""
     url = rendering.reload_url("RELIANCE.NS", 1200.0, "RELIANCE:1200:50,TCS:3100:10")
     assert "positions=RELIANCE:1200:50,TCS:3100:10" in url
+
+
+def test_the_error_page_sizes_itself_to_its_content():
+    """It renders into a fixed 350px iframe, so a long message would be cut
+    off with no way to scroll to the rest — the same clipping the dashboard
+    had before the frame was matched to its content."""
+    page = rendering.HTML_ERROR.safe_substitute(error_msg="boom", reload_url="?x=1")
+    assert "syncFrameHeight" in page
 
 
 def test_a_ticker_cannot_close_the_inline_script_block():
