@@ -184,11 +184,6 @@ def action_card(
     v: Verdict,
     summary: str,
     stale: bool = False,
-    move_phrase: str = "",
-    atr_pct: float = 0.0,
-    conf_pct: float | None = None,
-    conf_n: int = 0,
-    conf_avg: float = 0.0,
     rr_str: str = "",
 ) -> str:
     """Build the Action card: the plain summary sentence leads, then the why
@@ -220,16 +215,6 @@ def action_card(
 
     if rr_str:
         meta += f"<span>{rr_str}</span>"
-
-    if conf_pct is not None and conf_n > 0:
-        chance_str = (
-            "a 50/50 chance" if 45 <= conf_pct <= 55 else f"a {conf_pct:.0f}% chance"
-        )
-        ctx_sent = (
-            f"Past history shows {chance_str} of a "
-            f"<b>{conf_avg:+.1f}%</b> return over the next 5 days."
-        )
-        meta += f"<span>{ctx_sent}</span>"
 
     emoji = {"up": "🟢", "warn": "🟡", "dn": "🔴"}[v.css]
     # Only a functional note remains — a flag that the read is on a stale price.
@@ -290,6 +275,12 @@ def plain_summary(
 
 
 def move_phrase_text(chg_pct: float, atr_pct: float) -> str:
+    """How today's move reads against this stock's own normal day, or ''.
+
+    ``atr_pct`` is the stock's average daily range as a percentage, so the
+    ratio says whether today is calm, normal or wild *for this particular
+    stock* rather than by an absolute yardstick.
+    """
     if atr_pct <= 0:
         return ""
     ratio = abs(chg_pct) / atr_pct
@@ -300,19 +291,3 @@ def move_phrase_text(chg_pct: float, atr_pct: float) -> str:
     elif ratio < 2.2:
         return "bigger than a normal day"
     return "much bigger than a normal day"
-
-
-def move_context(chg_pct: float, atr_pct: float) -> str:
-    """A plain read of today's move next to this stock's usual day, or ''.
-
-    ``atr_pct`` is the stock's average daily range as a percentage — its
-    "normal day" — so the ratio says whether today is calm, normal, or wild
-    *for this particular stock* rather than by an absolute yardstick.
-    """
-    phrase = move_phrase_text(chg_pct, atr_pct)
-    if not phrase:
-        return ""
-    return (
-        f'<div class="movectx">Today the move is {phrase} '
-        f"<b>(usual &asymp; &plusmn;{atr_pct:.1f}%)</b></div>"
-    )

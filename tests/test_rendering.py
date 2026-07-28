@@ -11,7 +11,7 @@ from rendering import (
     action_card,
     entry_verdict,
     expected_range_label,
-    move_context,
+    move_phrase_text,
     plain_summary,
     position_card,
     resolve_price,
@@ -400,18 +400,18 @@ def test_summary_never_contradicts_the_verdict():
         (6.0, "much bigger than a normal day"),
     ],
 )
-def test_move_context_scales_to_the_stocks_own_normal_day(chg, phrase):
+def test_move_phrase_scales_to_the_stocks_own_normal_day(chg, phrase):
     # A 2%/day stock: the same ₹ move reads differently than for a calm stock.
-    assert phrase in move_context(chg, 2.0)
+    assert move_phrase_text(chg, 2.0) == phrase
 
 
-def test_move_context_is_blank_without_a_usable_daily_range():
-    assert move_context(1.5, 0.0) == ""
+def test_move_phrase_is_blank_without_a_usable_daily_range():
+    assert move_phrase_text(1.5, 0.0) == ""
 
 
-def test_move_context_is_direction_agnostic():
+def test_move_phrase_is_direction_agnostic():
     """A 3% drop is as big a day as a 3% rise."""
-    assert move_context(-3.5, 2.0) == move_context(3.5, 2.0)
+    assert move_phrase_text(-3.5, 2.0) == move_phrase_text(3.5, 2.0)
 
 
 # ---------------------------------------------------------------- expected range

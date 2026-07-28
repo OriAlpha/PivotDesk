@@ -19,7 +19,6 @@ from urllib.parse import quote
 
 import streamlit as st
 
-from backtest import signal_confidence
 from chart import render_chart_html
 from config import IST, MARKET_CLOSE
 from data import (
@@ -37,7 +36,6 @@ from verdict import (
     action_card,
     entry_verdict,
     fmt,
-    move_context,
     move_phrase_text,
     plain_summary,
 )
@@ -48,11 +46,10 @@ __all__ = [
     "OVERBOUGHT_RSI",
     "PriceView",
     "action_card",
-    "compose_read",
     "entry_verdict",
     "expected_range_label",
     "fmt",
-    "move_context",
+    "move_phrase_text",
     "plain_summary",
     "position_card",
     "render",
@@ -69,11 +66,6 @@ CHART_STATE_KEY = "pivotdesk_chart_html"
 
 
 # ---------------------------------------------------------------- helpers
-
-
-def compose_read() -> str:
-    """Data attribution footer."""
-    return "Data: Yahoo Finance"
 
 
 def reload_url(ticker: str, entry: float, positions_str: str = "") -> str:
@@ -295,7 +287,7 @@ def position_card(
 # ---------------------------------------------------------------- render entry points
 
 
-def render_chart_panel(total_visits: int = 0) -> None:
+def render_chart_panel() -> None:
     """Draw the chart frame from the markup ``render()`` last produced.
 
     Called from outside the refreshing fragment, so a fragment rerun leaves
@@ -307,11 +299,7 @@ def render_chart_panel(total_visits: int = 0) -> None:
     chart_html = st.session_state.get(CHART_STATE_KEY)
     if not chart_html:
         return
-    html = CHART_PAGE.safe_substitute(
-        chart_html=chart_html,
-        read=compose_read(),
-        visit_count=f"{total_visits:,}",
-    )
+    html = CHART_PAGE.safe_substitute(chart_html=chart_html)
     st.iframe(html, height=520)
 
 
@@ -395,7 +383,6 @@ def render(
 
     # ---- change block (never fabricate a +0.00 for a price we could not fetch)
     chg_pct = 0.0
-    move_ctx_html = ""
     if pv.stale:
         chg_html = (
             '<div class="chg stale">⚠ Live price unavailable · showing last close</div>'
@@ -407,9 +394,6 @@ def render(
             f'<div class="chg mono" '
             f'style="color:{"var(--sup)" if chg >= 0 else "var(--res)"}">'
             f"{'▲' if chg >= 0 else '▼'} {chg:+,.2f} ({chg_pct:+.2f}%)</div>"
-        )
-        move_ctx_html = move_context(
-            chg_pct, ind.atr_val / price * 100 if price else 0.0
         )
 
     # ---- moving-average classification (depends on live price)
@@ -475,20 +459,6 @@ def render(
             price > piv["PP"],
         ]
     )
-
-    # ---- historical confidence: how the same (score, RSI band) setup has
-    # played out before. Silent when too few samples to trust — never quotes a
-    # win rate off three observations.
-    conf = signal_confidence(comp, score, ind.rsi_val)
-    if conf is None:
-        bias_confidence = ""
-    else:
-        pct = conf.win_rate * 100
-        cls = "up" if pct >= 55 else ("dn" if pct <= 45 else "warn")
-        bias_confidence = (
-            f'<div class="conf">Up 5d later: <b class="{cls}">{pct:.0f}%</b> '
-            f"of {conf.n} similar days &middot; avg {conf.avg_return:+.1f}%</div>"
-        )
 
     # ---- action verdict (headline buy/wait call, synthesised from the signals)
     verdict = entry_verdict(
@@ -590,7 +560,13 @@ def render(
     exp_hi = price + ind.atr_val if price else 0.0
     atr_pct_val = ind.atr_val / price * 100 if price else 0.0
     exp_label = expected_range_label(now, is_open, holiday)
-    exp_range_html = f'<div class="sub mono" style="margin-top:4px;color:var(--muted);font-size:11px;">{exp_label}: ₹{fmt(exp_lo)} – ₹{fmt(exp_hi)} (±{atr_pct_val:.1f}%)</div>'
+    exp_range_html = (
+        f'<div class="exprange mono">'
+        f'<span class="xr-lab">{exp_label}</span>'
+        f'<span class="xr-val">₹{fmt(exp_lo)}<em>–</em>₹{fmt(exp_hi)}</span>'
+        f'<span class="xr-pct">±{atr_pct_val:.1f}%</span>'
+        f"</div>"
+    )
 
     # ---- final HTML assembly
     symbol = ticker.replace(".NS", "")
@@ -633,21 +609,12 @@ def render(
         bias_n=str(score),
         bias_caution=bias_caution,
         bias_chips=bias_chips,
-        bias_confidence=bias_confidence,
         action_card=action_card(
             verdict,
             summary_sentence,
             stale=pv.stale,
-            move_phrase=""
-            if pv.stale
-            else move_phrase_text(chg_pct, ind.atr_val / price * 100 if price else 0.0),
-            atr_pct=0.0 if pv.stale else (ind.atr_val / price * 100 if price else 0.0),
-            conf_pct=pct if conf else None,
-            conf_n=conf.n if conf else 0,
-            conf_avg=conf.avg_return if conf else 0.0,
             rr_str=rr_str,
         ),
-        move_ctx=move_ctx_html,
         day_range_html=day_range_html,
         data_banner=(
             '<div class="databanner">⚠ Yahoo data unavailable · showing the last '

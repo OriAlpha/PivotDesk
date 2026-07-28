@@ -17,7 +17,7 @@ def render_chart_html(
     daily: pd.DataFrame,
     piv: dict[str, float],
     st_stop: float | None = None,
-    sessions: int = 252,
+    sessions: int = 22,  # ~1 month of trading days — the opening view
     ticker: str = "",
     target_price: float | None = None,
     buy_lo: float | None = None,
@@ -96,7 +96,7 @@ def render_chart_html(
     ticker_js = js_literal((ticker or "").strip().upper())
 
     return f"""
-<details class="panelbox chart-expander" style="margin-top:20px;padding:0;" open>
+<details class="panelbox chart-expander" style="padding:0;" open>
   <summary style="padding:14px 20px;cursor:pointer;list-style:none;outline:none;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;user-select:none;">
     <h3 style="margin:0;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--dim);font-weight:800;text-align:center;">PIVOT & PRICE ACTION CHART</h3>
     <div id="chart-legend" style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);text-align:center;margin-top:4px;">
@@ -105,10 +105,10 @@ def render_chart_html(
   </summary>
   <div style="padding:0 20px 18px 20px;border-top:1px solid var(--line);">
     <div style="display:flex;gap:6px;justify-content:center;margin-top:12px;">
-      <button type="button" class="tf-btn" data-days="22" style="background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--muted);border-radius:99px;padding:3px 10px;font-size:10px;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">1M</button>
+      <button type="button" class="tf-btn active-tf" data-days="22" style="background:rgba(111,164,255,.15);border:1px solid var(--price);color:var(--price);border-radius:99px;padding:3px 10px;font-size:10px;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">1M</button>
       <button type="button" class="tf-btn" data-days="66" style="background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--muted);border-radius:99px;padding:3px 10px;font-size:10px;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">3M</button>
       <button type="button" class="tf-btn" data-days="132" style="background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--muted);border-radius:99px;padding:3px 10px;font-size:10px;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">6M</button>
-      <button type="button" class="tf-btn active-tf" data-days="252" style="background:rgba(111,164,255,.15);border:1px solid var(--price);color:var(--price);border-radius:99px;padding:3px 10px;font-size:10px;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">1Y</button>
+      <button type="button" class="tf-btn" data-days="252" style="background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--muted);border-radius:99px;padding:3px 10px;font-size:10px;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">1Y</button>
       <button type="button" class="tf-btn" data-days="0" style="background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--muted);border-radius:99px;padding:3px 10px;font-size:10px;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">ALL</button>
     </div>
     <div id="tv-chart" style="width:100%;height:360px;position:relative;background:#0A0E17;border-radius:10px;margin-top:12px;"></div>
@@ -236,7 +236,9 @@ def render_chart_html(
     `;
   }});
 
-  const storageKey = 'pivotdesk_chart_range_v2_' + ({ticker_js} || 'default');
+  // v3: the opening window moved from a year to a month, so a range saved
+  // against the old default must not win over it.
+  const storageKey = 'pivotdesk_chart_range_v3_' + ({ticker_js} || 'default');
   const openKey = 'pivotdesk_chart_open_' + ({ticker_js} || 'default');
 
   function applyDefaultRange() {{

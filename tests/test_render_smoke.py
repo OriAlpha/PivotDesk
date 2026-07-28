@@ -104,10 +104,10 @@ def test_render_has_no_unsubstituted_placeholders(rendered, case):
 
 def test_every_supplied_value_has_a_placeholder(rendered, monkeypatch):
     """The mirror of the test above, which only catches a placeholder with no
-    value. ``safe_substitute`` drops surplus keys without a word, so when the
-    footer markup lost its ``$read`` and ``$visit_count`` the attribution line
-    and the visit counter quietly stopped rendering while still being built
-    and passed on every draw.
+    value. ``safe_substitute`` drops surplus keys without a word, so a value
+    whose placeholder has been edited out of the markup goes on being built
+    and passed on every draw while rendering nothing — which is how the
+    footer, the move-context line and the backtest readout all went missing.
     """
     supplied: dict[str, object] = {}
     real = rendering.HTML.safe_substitute
@@ -123,7 +123,7 @@ def test_every_supplied_value_has_a_placeholder(rendered, monkeypatch):
 
 
 def test_chart_page_is_handed_exactly_what_it_asks_for(monkeypatch):
-    """Same guard for the chart frame, which carries the footer now."""
+    """Same guard for the chart frame."""
     supplied: dict[str, object] = {}
     real = rendering.CHART_PAGE.safe_substitute
 
@@ -136,7 +136,7 @@ def test_chart_page_is_handed_exactly_what_it_asks_for(monkeypatch):
     monkeypatch.setitem(
         rendering.st.session_state, rendering.CHART_STATE_KEY, "<div>chart</div>"
     )
-    rendering.render_chart_panel(total_visits=7)
+    rendering.render_chart_panel()
 
     assert set(supplied) == set(rendering.CHART_PAGE.get_identifiers())
 
@@ -330,7 +330,6 @@ def test_reload_url_preserves_positions():
         bias_n="",
         bias_caution="",
         bias_chips="",
-        bias_confidence="",
         action_card="",
         move_ctx="",
         day_range_html="",
@@ -398,35 +397,3 @@ def test_vs_nifty_benchmark_line_is_removed(rendered):
     """The page must render without any vs-NIFTY benchmark line."""
     html = rendered(**OPEN, live=(150.0, 148.0, 152.0))
     assert "vs NIFTY" not in html
-
-
-# ---------------------------------------------------------------- confidence
-
-
-def test_the_confidence_line_renders_when_the_engine_returns_a_result(
-    rendered, monkeypatch
-):
-    """The card shows the win rate when the engine has enough history to call
-    it. Patched at the module boundary so the test pins the *rendering* branch,
-    not the backtest's data sensitivity."""
-    from backtest import Confidence
-
-    monkeypatch.setattr(
-        rendering,
-        "signal_confidence",
-        lambda *a, **k: Confidence(win_rate=0.64, n=28, avg_return=1.2),
-    )
-    html = rendered(**OPEN, live=(150.0, 148.0, 152.0))
-    assert "Past history shows" in html
-    assert "64%" in html
-
-
-def test_the_confidence_line_is_absent_when_the_engine_returns_none(
-    rendered, monkeypatch
-):
-    """Below the minimum-sample threshold the line vanishes cleanly — no
-    literal ``$bias_confidence`` leaks into the page."""
-    monkeypatch.setattr(rendering, "signal_confidence", lambda *a, **k: None)
-    html = rendered(**OPEN, live=(150.0, 148.0, 152.0))
-    assert "Past history shows" not in html
-    assert "$bias_confidence" not in html

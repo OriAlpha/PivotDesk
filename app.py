@@ -58,6 +58,15 @@ reload_status = st.session_state.pop("reload_status", "")
 # ---------------------------------------------------------------- premium CSS
 
 st.markdown(
+    # The dashboard frames import these themselves; the surrounding Streamlit
+    # chrome does not, so its mono rules were silently falling back.
+    '<link href="https://fonts.googleapis.com/css2?'
+    "family=Archivo:wght@600;800&family=IBM+Plex+Mono:wght@400;500;600;700"
+    '&display=swap" rel="stylesheet">',
+    unsafe_allow_html=True,
+)
+
+st.markdown(
     """<style>
   .stApp{background:#0A0E17}
   header, header[data-testid="stHeader"]{display:none!important}
@@ -130,8 +139,20 @@ st.markdown(
     width: 100% !important;
     border: none !important;
     overflow: hidden !important;
+    /* Inline by default, which leaves a baseline descender gap under it. */
+    display: block !important;
   }
-  
+
+  /* Each element container is a flex item sized by flex-basis from the
+     height= passed to st.iframe, and flex-basis beats any height we set.
+     Our frames measure their own content and shrink to fit, so the reserved
+     basis was left behind as dead space below them. Let the container track
+     the frame it holds instead. */
+  div[data-testid="stElementContainer"]:has(> iframe[data-testid="stIFrame"]) {
+    flex: 0 0 auto !important;
+    height: auto !important;
+  }
+
   /* Style the buttons inside columns to look like premium pills */
   div[data-testid="stColumn"] button, div[data-testid="column"] button {
     background-color: rgba(255, 255, 255, 0.03) !important;
@@ -252,6 +273,54 @@ st.markdown(
     padding: 16px 20px 18px 20px !important;
     background-color: transparent !important;
     border-top: 1px solid #1E2C48 !important;
+  }
+
+  /* POSITIONS is the only control on the page, so it earns a little presence:
+     mono type to match the readouts below, hairline rules either side, and a
+     slow glow that reads as a live terminal rather than a button. */
+  div[data-testid="stExpander"] summary p {
+    font-family: 'IBM Plex Mono', monospace !important;
+    color: #9FB6DA !important;
+    gap: 14px !important;
+    text-shadow: 0 0 14px rgba(111, 164, 255, 0.32);
+    animation: positions-glow 4.5s ease-in-out infinite;
+  }
+  div[data-testid="stExpander"] summary p::before,
+  div[data-testid="stExpander"] summary p::after {
+    content: "";
+    flex: 0 0 auto;
+    width: 34px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(111, 164, 255, 0.55));
+  }
+  div[data-testid="stExpander"] summary p::after {
+    transform: scaleX(-1);
+  }
+  /* Only the shadow animates — the base rule pins colour with !important,
+     which would outrank a keyframe anyway. */
+  @keyframes positions-glow {
+    0%, 100% { text-shadow: 0 0 12px rgba(111, 164, 255, 0.28); }
+    50%      { text-shadow: 0 0 24px rgba(111, 164, 255, 0.62); }
+  }
+  div[data-testid="stExpander"]:hover summary p {
+    color: #CBDDFF !important;
+    text-shadow: 0 0 26px rgba(111, 164, 255, 0.75);
+  }
+  /* Hairline catchlight along the card's top edge, echoing the panel borders
+     used throughout the dashboard. */
+  div[data-testid="stExpander"] { position: relative; }
+  div[data-testid="stExpander"]::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 18%;
+    right: 18%;
+    height: 1px;
+    pointer-events: none;
+    background: linear-gradient(90deg, transparent, rgba(111, 164, 255, 0.5), transparent);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    div[data-testid="stExpander"] summary p { animation: none; }
   }
 </style>""",
     unsafe_allow_html=True,
@@ -497,4 +566,4 @@ if ticker:
     dashboard()
     # Outside the fragment on purpose: this frame is left alone by the 60s
     # rerun, so the chart keeps its zoom and timeframe between refreshes.
-    render_chart_panel(total_visits=app_state.total_visits)
+    render_chart_panel()

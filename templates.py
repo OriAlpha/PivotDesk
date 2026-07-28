@@ -81,7 +81,9 @@ HTML = Template(
 *{box-sizing:border-box;margin:0;padding:0}
 html, body{background:var(--bg);color:var(--text);font-family:'Archivo',sans-serif;overflow-y:hidden}
 .mono{font-family:'IBM Plex Mono',monospace}
-.wrap{max-width:980px;margin:0 auto;padding:10px 16px 28px}
+/* No bottom padding: the chart frame follows this one, and the gap between
+   them should read as the same 16px that separates the cards. */
+.wrap{max-width:980px;margin:0 auto;padding:10px 16px 0}
 .top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:26px}
 .brand{font-weight:800;font-size:17px}.brand em{font-style:normal;color:var(--pp)}
 .mkt{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12.5px}
@@ -94,12 +96,26 @@ transition:all 0.2s ease;margin-right:8px;display:flex;align-items:center;gap:4p
 .reload-lnk:hover{color:var(--price);border-color:var(--price);background:rgba(111,164,255,.05)}
 .dot{width:8px;height:8px;border-radius:50%;background:$dot_color;box-shadow:0 0 8px $dot_color;$dot_anim}
 @keyframes pulse{50%{opacity:.4}}
-.hero{text-align:center;margin-bottom:30px}
+/* One gap governs the whole hero, so the name, the range capsule, the price
+   and the change all sit on the same 16px rhythm the cards below use. Child
+   margins are cleared rather than tuned individually. */
+.hero{text-align:center;margin-bottom:30px;display:flex;flex-direction:column;align-items:center;gap:16px}
+.hero>*{margin:0}
 .hero h1{font-size:22px;font-weight:800}
-.hero .sub{color:var(--dim);font-size:12px;margin:4px 0 14px}
+/* Expected range: forward-looking, so it borrows the pivot amber and a faint
+   halo to separate it from the settled numbers above. */
+.exprange{display:inline-flex;align-items:center;gap:10px;padding:4px 5px 4px 12px;
+border:1px solid rgba(255,197,61,.22);border-radius:99px;font-size:11.5px;
+background:linear-gradient(90deg,rgba(255,197,61,.08),rgba(255,197,61,.015));
+box-shadow:0 0 20px rgba(255,197,61,.05)}
+.exprange .xr-lab{font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--pp)}
+.exprange .xr-val{color:var(--text);font-weight:600;letter-spacing:.01em}
+.exprange .xr-val em{font-style:normal;color:var(--dim);margin:0 3px}
+.exprange .xr-pct{font-size:9.5px;font-weight:800;color:var(--pp);background:rgba(255,197,61,.12);
+border:1px solid rgba(255,197,61,.3);border-radius:99px;padding:3px 9px;letter-spacing:.04em}
 .hero .px{font-size:62px;font-weight:600;color:var(--price);line-height:1;text-shadow:0 0 40px rgba(111,164,255,.4)}
 .hero .px.stale{color:var(--muted);text-shadow:none}
-.hero .chg{font-size:15px;margin-top:8px}
+.hero .chg{font-size:15px}
 .hero .chg.stale{color:var(--pp);font-size:12.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
 .spectrum{position:relative;margin:0 8px 56px;height:114px}
 .tick[data-tip]{position:absolute;cursor:pointer}
@@ -134,8 +150,6 @@ box-shadow:0 0 22px rgba(111,164,255,.6)}
 padding:3px 8px;border-radius:99px;border:1px solid;letter-spacing:.04em;white-space:nowrap;transition:all 0.2s ease}
 .sigchips span.on{color:var(--sup);border-color:rgba(46,230,200,.35);background:rgba(46,230,200,.07)}
 .sigchips span.off{color:var(--res);border-color:rgba(255,107,107,.30);background:rgba(255,107,107,.06)}
-.conf{font-size:11px;color:var(--dim);margin-top:9px;font-weight:600;line-height:1.4}
-.conf b{font-weight:800}
 .acard{border:1px solid var(--line);border-radius:16px;padding:16px 22px;text-align:center;margin-bottom:16px;background:var(--panel);transition:all 0.25s ease}
 .acard.up{border-color:rgba(46,230,200,.4);background:linear-gradient(180deg,rgba(46,230,200,.05),transparent 62%),var(--panel)}
 .acard.warn{border-color:rgba(255,197,61,.4);background:linear-gradient(180deg,rgba(255,197,61,.05),transparent 62%),var(--panel)}
@@ -147,8 +161,6 @@ padding:3px 8px;border-radius:99px;border:1px solid;letter-spacing:.04em;white-s
 .ameta{display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-top:14px;font-size:12px;color:var(--muted);font-family:'IBM Plex Mono',monospace}
 .ameta b{color:var(--text);font-weight:600}
 .atag{margin-top:11px;font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);font-weight:700}
-.movectx{font-size:11.5px;color:var(--dim);margin-top:7px;font-weight:600}
-.movectx b{color:var(--muted);font-weight:700}
 .grid{display:grid;grid-template-columns:340px 1fr;gap:16px;align-items:stretch}
 @media(max-width:760px){.grid{grid-template-columns:1fr}}
 .panelbox{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px 20px;display:flex;flex-direction:column;transition:all 0.25s ease}
@@ -191,8 +203,7 @@ padding:11px 16px;margin-bottom:9px;display:flex;align-items:center;justify-cont
 .rc .k{font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);font-weight:800}
 .rc .v{font-size:16px;font-weight:800;color:var(--text)}
 .up{color:var(--sup)}.dn{color:var(--res)}.warn{color:var(--pp)}
-.read{margin-top:18px;border-top:1px solid var(--line);padding-top:12px;text-align:center;font-size:10px;color:var(--dim);letter-spacing:.06em}
-.day-range-box{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:10px;font-size:11px;color:var(--muted)}
+.day-range-box{display:flex;align-items:center;justify-content:center;gap:10px;font-size:11px;color:var(--muted)}
 .day-range-box .lbl{font-family:'IBM Plex Mono',monospace;font-weight:500}
 .day-range-box .bar-bg{position:relative;width:140px;height:5px;background:#1E2C48;border-radius:99px;box-shadow:inset 0 1px 2px rgba(0,0,0,.3)}
 .day-range-box .bar-dot{position:absolute;top:50%;transform:translate(-50%,-50%);width:9px;height:9px;background:var(--price);border-radius:50%;box-shadow:0 0 8px var(--price)}
@@ -211,7 +222,7 @@ font-size:11.5px;font-weight:800;letter-spacing:.05em}
 .focus-btn{background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--muted);border-radius:99px;padding:3px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;transition:all 0.2s ease;margin-left:8px}
 .focus-btn:hover{background:rgba(111,164,255,.15);border-color:var(--price);color:var(--price)}
 @media(max-width:480px){
-  .wrap{padding:10px 8px 20px}
+  .wrap{padding:10px 8px 0}
   .top{flex-direction:column;gap:8px;text-align:center}
   .hero .px{font-size:42px}
   .tick .val{font-size:9.5px;bottom:-18px}
@@ -292,11 +303,9 @@ document.addEventListener('click', function(e) {
 <div class="top"><div class="brand">Pivot<em>Desk</em></div>
 <div class="mkt"><a href="$reload_url" target="_parent" class="reload-lnk $reload_cls">🔄 Reload</a><button type="button" class="focus-btn">👁️ Focus Mode</button><span class="dot"></span><span class="mono">$mkt_label</span></div></div>
 <div class="hero"><h1>$name</h1>
-<div class="sub mono">Prev: H $ph · L $pl · C $pc</div>
 $exp_range_html
 <div class="px mono $px_cls">₹$price</div>
 $chg_html
-$move_ctx
 $day_range_html
 $vol_spike_html
 </div>
@@ -319,8 +328,7 @@ $action_card
 $score_gauge
 <div class="sub2">$bias_n/6 signals bullish$bias_caution</div>
 <div class="sigchips">$bias_chips</div>
-$mtf_badge
-$bias_confidence</div>
+$mtf_badge</div>
 $pos_card
 </div>
 <div class="grid">
@@ -452,16 +460,14 @@ html, body{background:var(--bg);color:var(--text);font-family:'Archivo',sans-ser
 .chart-expander summary::-webkit-details-marker,.chart-expander summary::marker{display:none !important;content:"" !important}
 .chart-expander summary{list-style:none !important;transition:background-color 0.2s ease;border-radius:16px}
 .chart-expander summary:hover{background-color:rgba(255,255,255,.03)}
-.read{margin-top:18px;border-top:1px solid var(--line);padding-top:12px;text-align:center;font-size:10px;color:var(--dim);letter-spacing:.06em}
 </style>
 </head><body><div class="wrap">
 $chart_html
-<div class="read mono">$read · $visit_count views</div>
 </div>
 <script>
 // The chart is a sibling frame of the dashboard, so focus mode reaches it by
-// broadcast rather than through the DOM. Only the chart hides — the
-// attribution footer below it is the last thing on the page either way.
+// broadcast rather than through the DOM. Hiding the chart empties this frame,
+// which the auto-height script then collapses to nothing.
 (function() {
   const KEY = 'pivotdesk_focus';
   const details = document.querySelector('.chart-expander');
