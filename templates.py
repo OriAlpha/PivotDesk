@@ -124,8 +124,25 @@ border:1px solid rgba(255,197,61,.3);border-radius:99px;padding:3px 9px;letter-s
 .hero .chg{font-size:15px}
 .hero .chg.stale{color:var(--pp);font-size:12.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
 .spectrum{position:relative;margin:0 8px 56px;height:114px}
-.tick[data-tip]{position:absolute;cursor:pointer}
-.tick[data-tip]:hover::after{content:attr(data-tip);position:absolute;top:100%;left:50%;transform:translateX(-50%);background:#0D1527;border:1px solid var(--price);color:var(--text);padding:5px 11px;border-radius:6px;font-size:10.5px;white-space:nowrap;z-index:9999;pointer-events:none;box-shadow:0 6px 16px rgba(0,0,0,.8);margin-top:28px;font-family:'IBM Plex Mono',monospace}
+.tick[data-tip]{position:absolute;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.tick[data-tip]:focus-visible{outline:2px solid var(--price);outline-offset:3px}
+/* The tick itself is a 2px hairline, so on touch there is nothing to hit. This
+   widens the hit area to span the label above and the value below without
+   changing anything you can see. */
+.tick[data-tip]::before{content:"";position:absolute;left:50%;transform:translateX(-50%);
+top:-28px;bottom:-28px;width:52px;z-index:1}
+/* Hover only where a pointer can actually hover; a tap sets .tip-open instead.
+   Without the guard, touch browsers emulate :hover and the tooltip sticks
+   until you tap something else. */
+@media(hover:hover){.tick[data-tip]:hover::after{opacity:1}}
+.tick[data-tip].tip-open::after{opacity:1}
+/* Plain opacity, no fade: a transition leaves the computed value mid-flight,
+   which is neither testable nor worth 150ms on a tooltip. */
+.tick[data-tip]::after{content:attr(data-tip);opacity:0;position:absolute;top:100%;left:50%;transform:translateX(-50%);background:#0D1527;border:1px solid var(--price);color:var(--text);padding:5px 11px;border-radius:6px;font-size:10.5px;white-space:nowrap;z-index:9999;pointer-events:none;box-shadow:0 6px 16px rgba(0,0,0,.8);margin-top:28px;font-family:'IBM Plex Mono',monospace}
+/* S2 and R2 are pinned to 4%/96%, so a centred tooltip runs off the frame.
+   Anchor the outer two to their own edge instead. */
+.tick.t-s2::after{left:0;transform:none}
+.tick.t-r2::after{left:auto;right:0;transform:none}
 .band{position:absolute;left:0;right:0;top:50px;height:14px;border-radius:99px;
 background:linear-gradient(90deg,#2EE6C8 0%,#1C7F71 22%,#2A3B5E 44%,#77602A 56%,#8F4040 78%,#FF6B6B 100%);
 box-shadow:inset 0 1px 3px rgba(0,0,0,.5)}
@@ -325,11 +342,11 @@ $vol_spike_html
 $data_banner
 <div class="spectrum">
 <div class="band"></div>
-<div class="tick t-s2" data-tip="S2 ₹$s2 · Support 2 Zone"><span class="lab">S2</span><span class="val mono">$s2</span></div>
-<div class="tick t-s1" data-tip="S1 ₹$s1 · Support 1 Zone"><span class="lab">S1</span><span class="val mono">$s1</span></div>
-<div class="tick t-pp" data-tip="PP ₹$pp · Intraday Pivot Baseline"><span class="lab">PP</span><span class="val mono">$pp</span></div>
-<div class="tick t-r1" data-tip="R1 ₹$r1 · Resistance 1 Target"><span class="lab">R1</span><span class="val mono">$r1</span></div>
-<div class="tick t-r2" data-tip="R2 ₹$r2 · Resistance 2 Target"><span class="lab">R2</span><span class="val mono">$r2</span></div>
+<div class="tick t-s2" tabindex="0" role="button" aria-label="S2 ₹$s2 · Support 2 Zone" data-tip="S2 ₹$s2 · Support 2 Zone"><span class="lab">S2</span><span class="val mono">$s2</span></div>
+<div class="tick t-s1" tabindex="0" role="button" aria-label="S1 ₹$s1 · Support 1 Zone" data-tip="S1 ₹$s1 · Support 1 Zone"><span class="lab">S1</span><span class="val mono">$s1</span></div>
+<div class="tick t-pp" tabindex="0" role="button" aria-label="PP ₹$pp · Intraday Pivot Baseline" data-tip="PP ₹$pp · Intraday Pivot Baseline"><span class="lab">PP</span><span class="val mono">$pp</span></div>
+<div class="tick t-r1" tabindex="0" role="button" aria-label="R1 ₹$r1 · Resistance 1 Target" data-tip="R1 ₹$r1 · Resistance 1 Target"><span class="lab">R1</span><span class="val mono">$r1</span></div>
+<div class="tick t-r2" tabindex="0" role="button" aria-label="R2 ₹$r2 · Resistance 2 Target" data-tip="R2 ₹$r2 · Resistance 2 Target"><span class="lab">R2</span><span class="val mono">$r2</span></div>
 <div class="marker"><span class="tag mono">$price</span><div class="stem"></div></div>
 </div>
 <div class="returns">$returns_html
@@ -452,6 +469,35 @@ window.addEventListener('keydown', (e) => {
     if (reloadBtn) reloadBtn.click();
   }
 });
+
+// Pivot tooltips on touch. Only one is open at a time, and anything else --
+// a tap outside, Escape, or opening another -- closes it.
+(function () {
+  function closeAll(except) {
+    document.querySelectorAll('.tick.tip-open').forEach(function (t) {
+      if (t !== except) t.classList.remove('tip-open');
+    });
+  }
+  document.addEventListener('click', function (e) {
+    const tick = e.target.closest ? e.target.closest('.tick[data-tip]') : null;
+    if (!tick) { closeAll(null); return; }
+    const wasOpen = tick.classList.contains('tip-open');
+    closeAll(tick);
+    tick.classList.toggle('tip-open', !wasOpen);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { closeAll(null); return; }
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const tick = document.activeElement;
+    if (!tick || !tick.matches || !tick.matches('.tick[data-tip]')) return;
+    e.preventDefault();
+    const wasOpen = tick.classList.contains('tip-open');
+    closeAll(tick);
+    tick.classList.toggle('tip-open', !wasOpen);
+  });
+  // A tooltip left open across a refresh would point at a stale price.
+  window.addEventListener('pagehide', function () { closeAll(null); });
+})();
 </script>
 </body></html>""".replace("__AUTO_HEIGHT_JS__", _AUTO_HEIGHT_JS)
 )

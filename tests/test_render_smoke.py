@@ -244,6 +244,30 @@ def test_new_high_reads_as_full_range_not_over_100_percent(rendered):
     assert int(re.search(r">(\d+)% of range<", html).group(1)) == 100
 
 
+# ---------------------------------------------------------------- pivot tooltips
+
+
+def test_pivot_tooltips_are_reachable_without_a_pointer(rendered):
+    """Regression: the level names lived behind :hover alone, so on a phone --
+    the way this dashboard is mostly read -- they could not be opened at all."""
+    html = rendered(**OPEN, live=(150.0, 148.0, 152.0))
+    # A tap sets .tip-open; hover is fenced off to devices that actually hover.
+    assert ".tick[data-tip].tip-open::after" in html
+    assert "@media(hover:hover)" in html
+    assert "tip-open" in html.split("<script>")[-1]  # the toggle ships too
+    # Every tick is focusable and announces its own label.
+    for lvl in ("S2", "S1", "PP", "R1", "R2"):
+        assert f'aria-label="{lvl} ' in html
+    assert html.count('tabindex="0" role="button"') == 5
+
+
+def test_outer_pivot_tooltips_are_pinned_inside_the_frame(rendered):
+    """S2 and R2 sit at 4%/96%, so a centred tooltip hangs off the edge."""
+    html = rendered(**OPEN, live=(150.0, 148.0, 152.0))
+    assert ".tick.t-s2::after{left:0;transform:none}" in html
+    assert ".tick.t-r2::after{left:auto;right:0;transform:none}" in html
+
+
 # ---------------------------------------------------------------- bias card
 
 
