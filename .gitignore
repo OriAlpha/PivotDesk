@@ -7,6 +7,7 @@ graphify-out/
 
 # session tooling artifacts
 .zcode/
+.claude/
 
 # personal notes / local reference — not tracked
 pivotdesk-guide.md

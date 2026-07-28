@@ -36,7 +36,6 @@ from verdict import (
     action_card,
     entry_verdict,
     fmt,
-    move_phrase_text,
     plain_summary,
 )
 
@@ -49,7 +48,6 @@ __all__ = [
     "entry_verdict",
     "expected_range_label",
     "fmt",
-    "move_phrase_text",
     "plain_summary",
     "position_card",
     "render",
@@ -118,7 +116,7 @@ class PriceView:
 
     price: float
     baseline: float  # close the change is measured against
-    day_low: float | None
+    day_low: float | None  # live session range only — None when there is none
     day_high: float | None
     stale: bool  # price is a fallback, not a live quote
 
@@ -127,13 +125,11 @@ def resolve_price(
     live: tuple[float, float, float] | None,
     is_open: bool,
     prev_close: float,
-    prev_low: float,
-    prev_high: float,
     prior_close: float | None,
 ) -> PriceView:
     """Pick the displayed price and the close its change is measured against.
 
-    ``prev_*`` describe the last *completed* session — the one the pivots are
+    ``prev_close`` closes the last *completed* session — the one the pivots are
     built from. ``prior_close`` is the close before that.
 
     - Live quote available: price is live, measured against the last close.
@@ -141,6 +137,11 @@ def resolve_price(
       is **not** the current price. Flag it rather than showing a fake +0.00.
     - Market closed: the last completed session *is* today (or Friday), so the
       move is measured against the session before it.
+
+    Only a live quote carries a day range. Without one there is no session to
+    range over, and the last completed session's low/high are already spelled
+    out on the Reference card — drawing them again as "today" would say the
+    same thing twice under a heading that no longer applies.
     """
     if live is not None:
         price, day_low, day_high = live
@@ -148,7 +149,7 @@ def resolve_price(
     if is_open:
         return PriceView(prev_close, prev_close, None, None, stale=True)
     baseline = prior_close if prior_close is not None else prev_close
-    return PriceView(prev_close, baseline, prev_low, prev_high, stale=False)
+    return PriceView(prev_close, baseline, None, None, stale=False)
 
 
 # ---------------------------------------------------------------- scoring
@@ -358,13 +359,11 @@ def render(
         live,
         is_open,
         prev_close=pc,
-        prev_low=pl,
-        prev_high=ph,
         prior_close=float(comp["Close"].iloc[-2]) if len(comp) >= 2 else None,
     )
     price = pv.price
 
-    # ---- day range bar (meaningless without a session to range over)
+    # ---- day range bar (live sessions only — see resolve_price)
     if pv.day_low is None or pv.day_high is None:
         day_range_html = ""
     else:

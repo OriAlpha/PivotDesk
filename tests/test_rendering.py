@@ -11,7 +11,6 @@ from rendering import (
     action_card,
     entry_verdict,
     expected_range_label,
-    move_phrase_text,
     plain_summary,
     position_card,
     resolve_price,
@@ -25,7 +24,7 @@ def _piv(pp, s1, s2, r1, r2):
 
 
 # Last completed session, and the one before it.
-PREV_CLOSE, PREV_LOW, PREV_HIGH = 145.0, 143.0, 147.0
+PREV_CLOSE = 145.0
 PRIOR_CLOSE = 140.0
 
 
@@ -33,9 +32,7 @@ PRIOR_CLOSE = 140.0
 
 
 def test_live_quote_is_measured_against_the_last_close():
-    pv = resolve_price(
-        (150.0, 148.0, 152.0), True, PREV_CLOSE, PREV_LOW, PREV_HIGH, PRIOR_CLOSE
-    )
+    pv = resolve_price((150.0, 148.0, 152.0), True, PREV_CLOSE, PRIOR_CLOSE)
     assert pv.price == 150.0
     assert pv.baseline == PREV_CLOSE
     assert (pv.day_low, pv.day_high) == (148.0, 152.0)
@@ -45,22 +42,25 @@ def test_live_quote_is_measured_against_the_last_close():
 def test_closed_market_is_measured_against_the_prior_session():
     """Regression: the last close was compared against itself, so the change
     readout was a permanent +0.00 outside market hours."""
-    pv = resolve_price(None, False, PREV_CLOSE, PREV_LOW, PREV_HIGH, PRIOR_CLOSE)
+    pv = resolve_price(None, False, PREV_CLOSE, PRIOR_CLOSE)
     assert pv.price == PREV_CLOSE
     assert pv.baseline == PRIOR_CLOSE
     assert pv.price - pv.baseline == pytest.approx(5.0)
     assert pv.stale is False
 
 
-def test_closed_market_shows_the_last_session_range():
-    pv = resolve_price(None, False, PREV_CLOSE, PREV_LOW, PREV_HIGH, PRIOR_CLOSE)
-    assert (pv.day_low, pv.day_high) == (PREV_LOW, PREV_HIGH)
+def test_closed_market_draws_no_day_range():
+    """The last session's low/high already sit on the Reference card; drawing
+    them again under a "today" heading said the same thing twice."""
+    pv = resolve_price(None, False, PREV_CLOSE, PRIOR_CLOSE)
+    assert pv.day_low is None
+    assert pv.day_high is None
 
 
 def test_failed_live_fetch_is_flagged_stale():
     """Regression: a failed quote rendered yesterday's close as a live price,
     with a +0.00 change and a healthy pulsing "market open" indicator."""
-    pv = resolve_price(None, True, PREV_CLOSE, PREV_LOW, PREV_HIGH, PRIOR_CLOSE)
+    pv = resolve_price(None, True, PREV_CLOSE, PRIOR_CLOSE)
     assert pv.stale is True
     assert pv.price == PREV_CLOSE
     # No intraday data means no honest day range to draw.
@@ -69,7 +69,7 @@ def test_failed_live_fetch_is_flagged_stale():
 
 
 def test_falls_back_to_the_last_close_without_a_prior_session():
-    pv = resolve_price(None, False, PREV_CLOSE, PREV_LOW, PREV_HIGH, None)
+    pv = resolve_price(None, False, PREV_CLOSE, None)
     assert pv.baseline == PREV_CLOSE
 
 
@@ -386,32 +386,6 @@ def test_summary_never_contradicts_the_verdict():
     verdict must not produce a 'wait' sentence, or vice versa."""
     v = _buy_verdict()
     assert "wait" not in plain_summary("X", 5, True, 55.0, v).lower()
-
-
-# ---------------------------------------------------------------- move context
-
-
-@pytest.mark.parametrize(
-    "chg,phrase",
-    [
-        (0.4, "smaller than a normal day"),
-        (2.0, "about a normal day"),
-        (3.5, "bigger than a normal day"),
-        (6.0, "much bigger than a normal day"),
-    ],
-)
-def test_move_phrase_scales_to_the_stocks_own_normal_day(chg, phrase):
-    # A 2%/day stock: the same ₹ move reads differently than for a calm stock.
-    assert move_phrase_text(chg, 2.0) == phrase
-
-
-def test_move_phrase_is_blank_without_a_usable_daily_range():
-    assert move_phrase_text(1.5, 0.0) == ""
-
-
-def test_move_phrase_is_direction_agnostic():
-    """A 3% drop is as big a day as a 3% rise."""
-    assert move_phrase_text(-3.5, 2.0) == move_phrase_text(3.5, 2.0)
 
 
 # ---------------------------------------------------------------- expected range

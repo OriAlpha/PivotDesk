@@ -22,6 +22,7 @@ import pytest
 
 import rendering
 from config import IST
+from data import completed_sessions
 from templates import js_literal
 
 PLACEHOLDER = re.compile(r"\$[a-zA-Z_][a-zA-Z0-9_]*")
@@ -162,6 +163,19 @@ def test_live_render_keeps_the_open_market_indicator(rendered):
     assert "· STALE" not in html
     assert "animation:pulse 2s infinite" in html
     assert '<div class="day-range-box">' in html
+
+
+@pytest.mark.parametrize("case", [CLOSED, WEEKEND, HOLIDAY])
+def test_no_day_range_bar_once_the_session_is_over(rendered, case):
+    """The bar used to fall back to the last session's low/high, restating the
+    Reference card's Prev L/H under a heading that no longer meant today."""
+    html = rendered(**case)
+    assert '<div class="day-range-box">' not in html
+    # The numbers themselves are not lost — Reference still carries them.
+    raw = history(case["data_through"])
+    prev = completed_sessions(raw, case["now"]).iloc[-1]
+    assert f"{prev['Low']:,.2f}" in html
+    assert f"{prev['High']:,.2f}" in html
 
 
 # ---------------------------------------------------------------- change readout

@@ -250,7 +250,9 @@ st.markdown(
     overflow: hidden !important;
     pointer-events: none !important;
   }
-  /* Style and guarantee visibility of POSITIONS text */
+  /* POSITIONS reads as one more section header, so it takes the dashboard's
+     own header rule verbatim: Archivo 11px/.18em uppercase in --dim, the same
+     as .panelbox h3, .vcard .k and .acard .k inside the frames. */
   div[data-testid="stExpander"] summary p,
   div[data-testid="stExpander"] summary [data-testid="stMarkdownContainer"] {
     display: flex !important;
@@ -259,9 +261,9 @@ st.markdown(
     font-size: 11px !important;
     letter-spacing: 0.18em !important;
     text-transform: uppercase !important;
-    color: #7E8DA8 !important;
+    color: #55637E !important;
     font-weight: 800 !important;
-    font-family: 'Inter', system-ui, sans-serif !important;
+    font-family: 'Archivo', sans-serif !important;
     text-align: center !important;
     margin: 0 auto !important;
     padding: 0 !important;
@@ -275,52 +277,10 @@ st.markdown(
     border-top: 1px solid #1E2C48 !important;
   }
 
-  /* POSITIONS is the only control on the page, so it earns a little presence:
-     mono type to match the readouts below, hairline rules either side, and a
-     slow glow that reads as a live terminal rather than a button. */
-  div[data-testid="stExpander"] summary p {
-    font-family: 'IBM Plex Mono', monospace !important;
-    color: #9FB6DA !important;
-    gap: 14px !important;
-    text-shadow: 0 0 14px rgba(111, 164, 255, 0.32);
-    animation: positions-glow 4.5s ease-in-out infinite;
-  }
-  div[data-testid="stExpander"] summary p::before,
-  div[data-testid="stExpander"] summary p::after {
-    content: "";
-    flex: 0 0 auto;
-    width: 34px;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(111, 164, 255, 0.55));
-  }
-  div[data-testid="stExpander"] summary p::after {
-    transform: scaleX(-1);
-  }
-  /* Only the shadow animates — the base rule pins colour with !important,
-     which would outrank a keyframe anyway. */
-  @keyframes positions-glow {
-    0%, 100% { text-shadow: 0 0 12px rgba(111, 164, 255, 0.28); }
-    50%      { text-shadow: 0 0 24px rgba(111, 164, 255, 0.62); }
-  }
+  /* Unlike those headers this one is clickable, so it lifts to --muted on
+     hover — enough to read as a control, without a second visual language. */
   div[data-testid="stExpander"]:hover summary p {
-    color: #CBDDFF !important;
-    text-shadow: 0 0 26px rgba(111, 164, 255, 0.75);
-  }
-  /* Hairline catchlight along the card's top edge, echoing the panel borders
-     used throughout the dashboard. */
-  div[data-testid="stExpander"] { position: relative; }
-  div[data-testid="stExpander"]::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 18%;
-    right: 18%;
-    height: 1px;
-    pointer-events: none;
-    background: linear-gradient(90deg, transparent, rgba(111, 164, 255, 0.5), transparent);
-  }
-  @media (prefers-reduced-motion: reduce) {
-    div[data-testid="stExpander"] summary p { animation: none; }
+    color: #7E8DA8 !important;
   }
 </style>""",
     unsafe_allow_html=True,

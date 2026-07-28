@@ -272,22 +272,3 @@ def plain_summary(
 
     conclusion = SUMMARY_CONCLUSION.get(verdict.label, verdict.label)
     return f"{name} {trend}{heat} — {conclusion}."
-
-
-def move_phrase_text(chg_pct: float, atr_pct: float) -> str:
-    """How today's move reads against this stock's own normal day, or ''.
-
-    ``atr_pct`` is the stock's average daily range as a percentage, so the
-    ratio says whether today is calm, normal or wild *for this particular
-    stock* rather than by an absolute yardstick.
-    """
-    if atr_pct <= 0:
-        return ""
-    ratio = abs(chg_pct) / atr_pct
-    if ratio < 0.6:
-        return "smaller than a normal day"
-    elif ratio < 1.4:
-        return "about a normal day"
-    elif ratio < 2.2:
-        return "bigger than a normal day"
-    return "much bigger than a normal day"
