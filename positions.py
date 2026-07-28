@@ -10,6 +10,7 @@ Wire format is ``SYM:entry:qty`` comma-separated, e.g.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 EXCHANGE_SUFFIXES = (".NS", ".BO")
@@ -40,12 +41,19 @@ def symbol_key(ticker: str) -> str:
 
 
 def _number(text: str) -> float | None:
-    """Positive float, or None. Never raises."""
+    """Positive, finite float, or None. Never raises.
+
+    ``float()`` accepts ``inf`` and anything that overflows to it (``1e400``),
+    and ``inf > 0`` is true — so without the finite check an entry price of
+    infinity reached the P&L maths, rendered as ``₹inf`` and ``nan sh``, and
+    round-tripped back into the URL where it stuck. ``nan`` is already caught
+    by the comparison, since every comparison against it is false.
+    """
     try:
         value = float(text)
     except ValueError:
         return None
-    return value if value > 0 else None
+    return value if value > 0 and math.isfinite(value) else None
 
 
 def _plain(value: float) -> str:

@@ -83,12 +83,25 @@ def test_quantity_without_entry_round_trips():
         "RELIANCE:-5:-2",  # non-positive
         "RELIANCE:0:0",
         ":1200:50",  # no symbol
+        "RELIANCE:inf:nan",  # float() takes these, and inf > 0 is true
+        "RELIANCE:1e400:-inf",  # overflows to inf
     ],
 )
 def test_junk_yields_an_empty_book_without_raising(raw):
     """The string is editable in the address bar, so a typo must cost one
     position at most — never the page."""
     assert parse_positions(raw) == {}
+
+
+@pytest.mark.parametrize("bad", ["inf", "Infinity", "1e400", "-inf", "nan"])
+def test_non_finite_numbers_never_reach_the_book(bad):
+    """Regression: ``?positions=RELIANCE:inf:50`` put an infinite entry price
+    into the P&L maths — the card read ``₹inf`` and ``nan sh`` — and then
+    re-encoded itself back into the URL, so it stuck until hand-edited."""
+    assert parse_positions(f"RELIANCE:{bad}:50") == {"RELIANCE": Position(None, 50.0)}
+    assert parse_positions(f"RELIANCE:1200:{bad}") == {
+        "RELIANCE": Position(1200.0, None)
+    }
 
 
 def test_one_bad_entry_does_not_lose_the_others():

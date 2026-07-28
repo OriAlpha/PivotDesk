@@ -9,6 +9,7 @@ market is open. Data: Yahoo Finance via yfinance. Not investment advice.
 from __future__ import annotations
 
 import datetime as dt
+import math
 import traceback
 
 import streamlit as st
@@ -300,14 +301,18 @@ st.markdown(
 
 
 def _positive_param(name: str) -> float | None:
-    """Read a positive float from the query string, or None."""
+    """Read a positive, finite float from the query string, or None.
+
+    ``?entry=inf`` parses and passes ``> 0``, so the finite check is what stops
+    an infinity reaching the number input and the P&L maths behind it.
+    """
     if name not in st.query_params:
         return None
     try:
         val = float(st.query_params[name])
     except ValueError:
         return None
-    return val if val > 0 else None
+    return val if val > 0 and math.isfinite(val) else None
 
 
 # Load persistent local state

@@ -131,6 +131,10 @@ border:1px solid rgba(255,197,61,.3);border-radius:99px;padding:3px 9px;letter-s
    changing anything you can see. */
 .tick[data-tip]::before{content:"";position:absolute;left:50%;transform:translateX(-50%);
 top:-28px;bottom:-28px;width:52px;z-index:1}
+/* Levels can sit closer together than the hit area is wide, and a later tick's
+   overlay would then swallow an earlier one's label. Keep the visible text
+   above every overlay so a tap always opens the level you aimed at. */
+.tick .lab,.tick .val{z-index:2}
 /* Hover only where a pointer can actually hover; a tap sets .tip-open instead.
    Without the guard, touch browsers emulate :hover and the tooltip sticks
    until you tap something else. */

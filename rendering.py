@@ -252,8 +252,9 @@ def position_card(
         stat = f"Trend broken · recovery above ₹{fmt(st_stop)}"
         stat_cls = "dn"
 
-    # Position sizing from the stop: a fixed rupee risk, divided by the
-    # per-share downside to the trend stop. Only meaningful with an uptrend
+    # Position sizing from the stop: ``risk_budget`` is a percentage of the
+    # trade's value, turned into rupees and divided by the per-share downside
+    # to the trend stop. Only meaningful with an uptrend
     # (stop below entry) — in a downtrend the stop sits above the entry, so
     # there is no downside distance to size off.
     sizing_html = ""
