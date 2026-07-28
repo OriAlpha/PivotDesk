@@ -62,6 +62,7 @@ st.markdown(
     # chrome does not, so its mono rules were silently falling back.
     '<link href="https://fonts.googleapis.com/css2?'
     "family=Archivo:wght@600;800&family=IBM+Plex+Mono:wght@400;500;600;700"
+    "&family=Titan+One"
     '&display=swap" rel="stylesheet">',
     unsafe_allow_html=True,
 )
@@ -250,26 +251,32 @@ st.markdown(
     overflow: hidden !important;
     pointer-events: none !important;
   }
-  /* POSITIONS reads as one more section header, so it takes the dashboard's
-     own header rule verbatim: Archivo 11px/.18em uppercase in --dim, the same
-     as .panelbox h3, .vcard .k and .acard .k inside the frames. */
+  /* Retro comic wordmark. Titan One is the closest free web face to the
+     reference alphabet — same heavy rounded cartoon caps — and the rest of the
+     look is CSS: the sampled red fill, a dark outline drawn behind the glyph
+     via paint-order, and a hard offset shadow in place of the drawn one. */
   div[data-testid="stExpander"] summary p,
   div[data-testid="stExpander"] summary [data-testid="stMarkdownContainer"] {
     display: flex !important;
     visibility: visible !important;
     opacity: 1 !important;
-    font-size: 11px !important;
-    letter-spacing: 0.18em !important;
+    font-size: 22px !important;
+    letter-spacing: 0.04em !important;
     text-transform: uppercase !important;
-    color: #55637E !important;
-    font-weight: 800 !important;
-    font-family: 'Archivo', sans-serif !important;
+    color: #EE0034 !important;
+    font-weight: 400 !important;  /* Titan One ships a single weight */
+    font-family: 'Titan One', 'Archivo', sans-serif !important;
     text-align: center !important;
     margin: 0 auto !important;
     padding: 0 !important;
     width: 100% !important;
     justify-content: center !important;
     align-items: center !important;
+    /* Stroke first, so the outline sits behind the fill instead of eating
+       into the letterforms the way a centred -webkit-text-stroke does. */
+    -webkit-text-stroke: 3px #260053;
+    paint-order: stroke fill;
+    text-shadow: 3px 3px 0 #260053;
   }
   div[data-testid="stExpanderDetails"] {
     padding: 16px 20px 18px 20px !important;
@@ -277,10 +284,13 @@ st.markdown(
     border-top: 1px solid #1E2C48 !important;
   }
 
-  /* Unlike those headers this one is clickable, so it lifts to --muted on
-     hover — enough to read as a control, without a second visual language. */
+  /* Hover pops the wordmark forward: brighter fill, shadow pushed out a touch. */
+  div[data-testid="stExpander"] summary p {
+    transition: color 0.2s ease, text-shadow 0.2s ease !important;
+  }
   div[data-testid="stExpander"]:hover summary p {
-    color: #7E8DA8 !important;
+    color: #FF2E52 !important;
+    text-shadow: 4px 4px 0 #260053 !important;
   }
 </style>""",
     unsafe_allow_html=True,
