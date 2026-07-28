@@ -86,11 +86,17 @@ html, body{background:var(--bg);color:var(--text);font-family:'Archivo',sans-ser
 .wrap{max-width:980px;margin:0 auto;padding:10px 16px 0}
 .top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:26px}
 .brand{font-weight:800;font-size:17px}.brand em{font-style:normal;color:var(--pp)}
-.mkt{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12.5px}
+/* One gap governs every child. The buttons used to carry their own margins on
+   top of it, which put 24px between Reload and Focus but 8px around the dot. */
+.mkt{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;
+gap:10px;color:var(--muted);font-size:12.5px}
+/* The dot and the clock are one reading, so they wrap as a unit instead of
+   letting "MARKET OPEN · 12:14 IST" break across two ragged lines. */
+.mkt-status{display:flex;align-items:center;gap:8px;white-space:nowrap}
 .reload-lnk{color:var(--muted);text-decoration:none;font-size:10px;font-weight:800;
 text-transform:uppercase;letter-spacing:.08em;border:1px solid var(--line);
 border-radius:6px;padding:3px 8px;background:rgba(255,255,255,.02);
-transition:all 0.2s ease;margin-right:8px;display:flex;align-items:center;gap:4px}
+transition:all 0.2s ease;display:flex;align-items:center;gap:4px}
 .reload-lnk.success{color:var(--sup) !important;border-color:var(--sup) !important;background:rgba(46,230,200,.05) !important}
 .reload-lnk.failed{color:var(--res) !important;border-color:var(--res) !important;background:rgba(255,107,107,.05) !important}
 .reload-lnk:hover{color:var(--price);border-color:var(--price);background:rgba(111,164,255,.05)}
@@ -219,11 +225,18 @@ font-size:11.5px;font-weight:800;letter-spacing:.05em}
   animation: pulse-warn 1.5s infinite !important;
   font-weight: 800 !important;
 }
-.focus-btn{background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--muted);border-radius:99px;padding:3px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;transition:all 0.2s ease;margin-left:8px}
+.focus-btn{background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--muted);border-radius:99px;padding:3px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;transition:all 0.2s ease}
 .focus-btn:hover{background:rgba(111,164,255,.15);border-color:var(--price);color:var(--price)}
 @media(max-width:480px){
   .wrap{padding:10px 8px 0}
-  .top{flex-direction:column;gap:8px;text-align:center}
+  .top{flex-direction:column;gap:10px;text-align:center}
+  /* Four items abreast is too many for a phone: the clock got squeezed onto a
+     second line and the row read as one crowded block. The two controls share
+     a centred line, the status takes its own underneath. */
+  .mkt{width:100%;justify-content:center}
+  .mkt-status{flex:0 0 100%;justify-content:center}
+  /* Both were sized for a mouse; on touch they want a bigger target. */
+  .reload-lnk,.focus-btn{padding:6px 12px;font-size:11px}
   .hero .px{font-size:42px}
   .tick .val{font-size:9.5px;bottom:-18px}
   .tick .lab{font-size:10px;top:-18px}
@@ -301,7 +314,7 @@ document.addEventListener('click', function(e) {
 </script>
 </head><body><div class="wrap">
 <div class="top"><div class="brand">Pivot<em>Desk</em></div>
-<div class="mkt"><a href="$reload_url" target="_parent" class="reload-lnk $reload_cls">🔄 Reload</a><button type="button" class="focus-btn">👁️ Focus Mode</button><span class="dot"></span><span class="mono">$mkt_label</span></div></div>
+<div class="mkt"><a href="$reload_url" target="_parent" class="reload-lnk $reload_cls">🔄 Reload</a><button type="button" class="focus-btn">👁️ Focus Mode</button><span class="mkt-status"><span class="dot"></span><span class="mono">$mkt_label</span></span></div></div>
 <div class="hero"><h1>$name</h1>
 $exp_range_html
 <div class="px mono $px_cls">₹$price</div>
@@ -524,18 +537,27 @@ body{background:var(--bg);color:var(--text);font-family:'Archivo',sans-serif}
 .wrap{max-width:980px;margin:0 auto;padding:10px 16px 28px}
 .top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:26px}
 .brand{font-weight:800;font-size:17px}.brand em{font-style:normal;color:#FFC53D}
-.mkt{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12.5px}
+.mkt{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;
+gap:10px;color:var(--muted);font-size:12.5px}
+.mkt-status{display:flex;align-items:center;gap:8px;white-space:nowrap}
 .reload-lnk{color:var(--res);text-decoration:none;font-size:10px;font-weight:800;
 text-transform:uppercase;letter-spacing:.08em;border:1px solid var(--res);
 border-radius:6px;padding:3px 8px;background:rgba(255,107,107,.05);
-transition:all 0.2s ease;margin-right:8px;display:flex;align-items:center;gap:4px}
+transition:all 0.2s ease;display:flex;align-items:center;gap:4px}
 .reload-lnk:hover{color:var(--price);border-color:var(--price);background:rgba(111,164,255,.05)}
+@media(max-width:480px){
+  .wrap{padding:10px 8px 28px}
+  .top{flex-direction:column;gap:10px;text-align:center}
+  .mkt{width:100%;justify-content:center}
+  .mkt-status{flex:0 0 100%;justify-content:center}
+  .reload-lnk{padding:6px 12px;font-size:11px}
+}
 .error-box{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:24px;text-align:center;margin-top:40px}
 .error-box h2{color:var(--res);font-size:18px;margin-bottom:12px;font-weight:800}
 .error-box p{color:var(--muted);font-size:13.5px;line-height:1.6}
 </style></head><body><div class="wrap">
 <div class="top"><div class="brand">Pivot<em>Desk</em></div>
-<div class="mkt"><a href="$reload_url" target="_parent" class="reload-lnk failed">🔄 Reload</a><span class="dot" style="width:8px;height:8px;border-radius:50%;background:var(--res);box-shadow:0 0 8px var(--res)"></span><span class="mono" style="color:var(--res)">FETCH FAILED</span></div></div>
+<div class="mkt"><a href="$reload_url" target="_parent" class="reload-lnk failed">🔄 Reload</a><span class="mkt-status"><span class="dot" style="width:8px;height:8px;border-radius:50%;background:var(--res);box-shadow:0 0 8px var(--res)"></span><span class="mono" style="color:var(--res)">FETCH FAILED</span></span></div></div>
 <div class="error-box">
   <h2>Data Fetch Failed</h2>
   <p>$error_msg — Yahoo may be rate-limiting. Retrying in 60s.</p>
