@@ -315,14 +315,15 @@ def _positive_param(name: str) -> float | None:
     return val if val > 0 and math.isfinite(val) else None
 
 
-# Load persistent local state
-app_state = load_state()
+# One state object per browser session, seeded from the local state file when
+# one is configured. Held in session_state rather than re-read from a
+# process-global file every run: a deployed app serves every visitor from the
+# same process, and sharing the object there put one visitor's ticker, cost
+# basis and position size in front of the next.
+if "app_state" not in st.session_state:
+    st.session_state.app_state = load_state()
 
-# Record unique session visit
-if "visited" not in st.session_state:
-    st.session_state.visited = True
-    app_state.record_visit(is_new_session=True)
-    save_state(app_state)
+app_state = st.session_state.app_state
 
 # Default parameters: query string overrides local file storage if non-empty
 raw_ticker = st.query_params.get("ticker", "").strip()

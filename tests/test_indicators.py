@@ -12,7 +12,9 @@ import pandas as pd
 import pytest
 
 from indicators import (
+    MIN_SESSIONS,
     atr,
+    compute_indicators,
     macd_state,
     pct_return,
     pivots,
@@ -214,3 +216,25 @@ def test_pct_return_negative():
 def test_pct_return_none_when_history_too_short():
     assert pct_return(pd.Series([1.0] * 5), 5) is None
     assert pct_return(pd.Series([1.0] * 6), 5) is not None
+
+
+# ---------------------------------------------------------------- history floor
+
+
+def test_compute_indicators_rejects_history_below_the_200_day_window():
+    """A short frame must not come back as a plausible bundle.
+
+    ``rolling(200).mean()`` on 199 rows is NaN, and the fallback that used to
+    stand in for it — the mean of the whole history — is a different statistic
+    under the same name.
+    """
+    df = frame([100.0 + i * 0.1 for i in range(MIN_SESSIONS - 1)])
+    with pytest.raises(ValueError, match="200"):
+        compute_indicators(df, dt.date(2026, 1, 1))
+
+
+def test_compute_indicators_sma200_is_the_200_day_mean():
+    closes = [100.0 + i * 0.1 for i in range(MIN_SESSIONS)]
+    df = frame(closes)
+    bundle = compute_indicators(df, dt.date(2026, 1, 1))
+    assert bundle.sma200 == pytest.approx(sum(closes[-200:]) / 200)

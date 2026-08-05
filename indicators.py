@@ -16,6 +16,13 @@ import streamlit as st
 
 from config import IST
 
+# Shortest history the indicator bundle is honest over. Set by the 200-day
+# average, which is one of the six signals behind the headline bias score: with
+# fewer rows there is no 200-day mean to compare the price against, and
+# substituting the mean of whatever history exists silently changes what the
+# ``200D`` chip and a sixth of the score mean.
+MIN_SESSIONS = 200
+
 # ---------------------------------------------------------------- primitives
 
 
@@ -192,7 +199,16 @@ def compute_indicators(df: pd.DataFrame, today: dt.date) -> IndicatorBundle:
     Cached by DataFrame content hash + calendar date, so indicators are
     only recomputed when the underlying daily data changes or a new
     trading day starts — not on every 60-second live-price refresh.
+
+    Requires at least :data:`MIN_SESSIONS` rows. Callers gate on this too; the
+    check is repeated here so a short frame can never reach the maths and come
+    back as a plausible-looking bundle built on a NaN 200-day average.
     """
+    if len(df) < MIN_SESSIONS:
+        raise ValueError(
+            f"Not enough history: need ≥{MIN_SESSIONS} completed sessions, got {len(df)}."
+        )
+
     close = df["Close"]
     prev = df.iloc[-1]
     ph = float(prev["High"])
@@ -202,11 +218,7 @@ def compute_indicators(df: pd.DataFrame, today: dt.date) -> IndicatorBundle:
 
     sma20 = float(close.rolling(20).mean().iloc[-1])
     sma50 = float(close.rolling(50).mean().iloc[-1])
-    sma200 = (
-        float(close.rolling(200).mean().iloc[-1])
-        if len(close) >= 200
-        else float(close.mean())
-    )
+    sma200 = float(close.rolling(200).mean().iloc[-1])
 
     rsi_val = rsi(close)
     bull, building = macd_state(close)

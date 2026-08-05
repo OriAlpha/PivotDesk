@@ -23,6 +23,7 @@ import pytest
 import rendering
 from config import IST
 from data import completed_sessions
+from indicators import MIN_SESSIONS
 from templates import js_literal
 
 PLACEHOLDER = re.compile(r"\$[a-zA-Z_][a-zA-Z0-9_]*")
@@ -63,6 +64,7 @@ def rendered(monkeypatch):
         entry=0.0,
         qty=0.0,
         daily_stale=False,
+        periods=300,
     ):
         captured: dict[str, str] = {}
         monkeypatch.setattr(
@@ -71,7 +73,7 @@ def rendered(monkeypatch):
         monkeypatch.setattr(
             rendering,
             "fetch_daily_resilient",
-            lambda _t: (history(data_through), daily_stale),
+            lambda _t: (history(data_through, periods), daily_stale),
         )
         monkeypatch.setattr(rendering, "fetch_live_price", lambda _t: live)
         rendering.render("TEST.NS", entry, now=now, qty=qty)
@@ -435,3 +437,40 @@ def test_vs_nifty_benchmark_line_is_removed(rendered):
     """The page must render without any vs-NIFTY benchmark line."""
     html = rendered(**OPEN, live=(150.0, 148.0, 152.0))
     assert "vs NIFTY" not in html
+
+
+# ---------------------------------------------------------------- history floor
+
+
+def test_short_history_is_refused_rather_than_scored_on_a_stand_in(monkeypatch):
+    """Below 200 sessions there is no 200-day average to compare against.
+
+    The fallback used to be the mean of whatever history existed, which is a
+    different statistic wearing the same name — so the ``200D`` chip and a
+    sixth of the headline bias score quietly measured something the card did
+    not claim. Refusing the symbol is the honest answer.
+    """
+    errors: list[str] = []
+    monkeypatch.setattr(rendering.st, "error", errors.append)
+    monkeypatch.setattr(
+        rendering.st, "iframe", lambda *a, **kw: pytest.fail("rendered anyway")
+    )
+    monkeypatch.setattr(
+        rendering,
+        "fetch_daily_resilient",
+        lambda _t: (history(TUE, periods=MIN_SESSIONS - 1), False),
+    )
+    monkeypatch.setattr(rendering, "fetch_live_price", lambda _t: None)
+
+    rendering.render("TEST.NS", 0.0, now=at(TUE, 16, 30))
+
+    assert len(errors) == 1
+    assert "200" in errors[0]
+
+
+def test_exactly_the_floor_still_renders(rendered):
+    """The boundary is inclusive — 200 completed sessions is enough."""
+    html = rendered(
+        data_through=TUE, now=at(TUE, 16, 30), live=None, periods=MIN_SESSIONS
+    )
+    assert not PLACEHOLDER.search(html)
