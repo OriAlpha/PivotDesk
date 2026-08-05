@@ -322,8 +322,6 @@ def _positive_param(name: str) -> float | None:
 # basis and position size in front of the next.
 if "app_state" not in st.session_state:
     st.session_state.app_state = load_state()
-    st.session_state.app_state.record_visit(is_new_session=True)
-    save_state(st.session_state.app_state)
 
 app_state = st.session_state.app_state
 
