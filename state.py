@@ -1,14 +1,22 @@
 """PivotDesk — local state persistence.
 
-Saves and loads user state (last active ticker, risk budget, position book,
-recent searches, and visit analytics) to/from a local JSON file so settings
-persist across app reloads.
+Remembers the last ticker, risk budget, position book, recent searches and
+visit counts between visits — but **only when a state file is explicitly
+configured**, via the ``PIVOTDESK_STATE_FILE`` environment variable.
+
+Off by default because the file is per *process*, not per browser session, and
+one Streamlit process serves every visitor to a deployed app. Persisting
+unconditionally handed the next visitor the previous one's ticker, cost basis
+and position size. A single-user local run opts in and loses nothing; a
+deployment leaves it unset and leaks nothing. Everything the dashboard needs to
+restore a view is in the URL either way — see :mod:`positions`.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -22,7 +30,17 @@ from positions import (
 
 logger = logging.getLogger(__name__)
 
-STATE_FILE = Path("pivotdesk_state.json")
+STATE_FILE_ENV = "PIVOTDESK_STATE_FILE"
+
+
+def state_path() -> Path | None:
+    """The configured state file, or ``None`` when persistence is off.
+
+    Read per call rather than captured at import so the setting is a property
+    of the environment the app runs in, not of when the module was loaded.
+    """
+    configured = os.environ.get(STATE_FILE_ENV, "").strip()
+    return Path(configured) if configured else None
 
 
 @dataclass
@@ -63,9 +81,13 @@ class AppState:
 
 
 def load_state(filepath: Path | str | None = None) -> AppState:
-    """Load application state from JSON file. Returns default state if file missing or invalid."""
-    path = Path(filepath) if filepath is not None else STATE_FILE
-    if not path.exists():
+    """Load application state from JSON file.
+
+    Returns a default state when persistence is off, or the file is missing or
+    invalid. An explicit *filepath* overrides the environment.
+    """
+    path = Path(filepath) if filepath is not None else state_path()
+    if path is None or not path.exists():
         return AppState()
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -84,8 +106,10 @@ def load_state(filepath: Path | str | None = None) -> AppState:
 
 
 def save_state(state: AppState, filepath: Path | str | None = None) -> None:
-    """Save application state to JSON file."""
-    path = Path(filepath) if filepath is not None else STATE_FILE
+    """Save application state to JSON file, or do nothing if persistence is off."""
+    path = Path(filepath) if filepath is not None else state_path()
+    if path is None:
+        return
     try:
         data = {
             "last_ticker": state.last_ticker,

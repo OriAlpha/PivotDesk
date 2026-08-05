@@ -14,7 +14,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 import rendering
-from state import AppState, save_state
+from state import STATE_FILE_ENV, AppState, save_state
 
 APP = str(Path(__file__).resolve().parent.parent / "app.py")
 
@@ -43,10 +43,11 @@ def _fresh(monkeypatch, tmp_path=None, **query_params):
     )
     monkeypatch.setattr(rendering, "fetch_live_price", lambda _t: (150.0, 148.0, 152.0))
     if tmp_path is not None:
-        state_file = tmp_path / "pivotdesk_state.json"
-        import state
-
-        monkeypatch.setattr(state, "STATE_FILE", state_file)
+        # Persistence is opt-in; a test that wants it configures a throwaway
+        # file the same way a local run does.
+        monkeypatch.setenv(STATE_FILE_ENV, str(tmp_path / "pivotdesk_state.json"))
+    else:
+        monkeypatch.delenv(STATE_FILE_ENV, raising=False)
 
     at = AppTest.from_file(APP, default_timeout=60)
     for key, value in query_params.items():
@@ -205,3 +206,23 @@ def test_state_persists_across_reloads(monkeypatch, tmp_path):
     assert query_param(at, "ticker") == "TCS.NS"
     assert query_param(at, "risk") == "7.5"
     assert query_param(at, "positions") == "TCS:3200:15"
+
+
+def test_a_session_starts_clean_when_persistence_is_off(monkeypatch, tmp_path):
+    """No state file configured — the deploy default.
+
+    A file sitting in the working directory is not enough to seed a session;
+    only an explicitly configured one is. That is what stops one visitor's
+    cost basis from opening in front of the next.
+    """
+    monkeypatch.chdir(tmp_path)
+    save_state(
+        AppState(last_ticker="TCS.NS", risk=7.5, positions_raw="TCS:3200:15"),
+        tmp_path / "pivotdesk_state.json",
+    )
+
+    at = _fresh(monkeypatch)
+
+    assert not at.exception
+    assert query_param(at, "ticker") == "RELIANCE.NS"
+    assert query_param(at, "positions") is None

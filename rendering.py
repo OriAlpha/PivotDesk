@@ -29,7 +29,7 @@ from data import (
     last_session_date,
     market_status,
 )
-from indicators import compute_indicators
+from indicators import MIN_SESSIONS, compute_indicators
 from templates import CHART_PAGE, HTML, HTML_ERROR, js_literal
 from verdict import (
     OVERBOUGHT_RSI,
@@ -344,8 +344,11 @@ def render(
         is_open, mkt_label = False, "MARKET CLOSED · NSE HOLIDAY"
 
     comp = completed_sessions(daily, now)
-    if len(comp) < 60:
-        st.error("Not enough history for this symbol (need ≥60 sessions).")
+    if len(comp) < MIN_SESSIONS:
+        st.error(
+            f"Not enough history for this symbol — {len(comp)} completed sessions, "
+            f"need ≥{MIN_SESSIONS} for the 200-day average behind the bias score."
+        )
         return
 
     # ---- indicators (cached — only recomputed when data or date changes)

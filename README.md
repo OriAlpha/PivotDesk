@@ -13,7 +13,17 @@ uv sync
 uv run streamlit run app.py
 ```
 
-Enter any NSE symbol (`.NS` is appended automatically): `BHAGYANGR`, `RELIANCE`, `TATAMOTORS`...
+Enter any NSE symbol (`.NS` is appended automatically): `BHAGYANGR`, `RELIANCE`, `TATAMOTORS`... Symbols need at least 200 completed sessions of history — see [Technical bias](#technical-bias--position-monitor).
+
+### Remembering your settings between visits
+
+Your ticker, position book and risk % already ride in the URL, so a bookmark restores them. To also have them restored on a bare visit with no query string, point `PIVOTDESK_STATE_FILE` at a file to persist to:
+
+```bash
+PIVOTDESK_STATE_FILE=pivotdesk_state.json uv run streamlit run app.py
+```
+
+It is **off unless set**, and deliberately so: the file belongs to the Streamlit *process*, not to a browser session, and one process serves every visitor to a deployed app. Persisting by default would hand the next visitor the previous one's ticker, cost basis and position size. Leave it unset when deploying; set it for a single-user local run. The file is gitignored — it holds your positions.
 
 ## Tests
 
@@ -48,6 +58,8 @@ The **Technical bias** card counts six transparent bullish signals: price above 
 | 2/6 | Leaning bearish | 14.0% |
 | 1/6 | Bearish | 18.6% |
 | 0/6 | Strong bearish | 12.5% |
+
+All six signals need real history behind them, so a symbol with fewer than **200 completed sessions** is refused rather than scored. The 200-day average is the binding constraint: below that window there is no 200-day mean to compare the price against, and substituting the mean of whatever history exists is a different statistic wearing the same name — it would quietly change what the `200D` chip and a sixth of the score mean, on exactly the recent listings where the reading is least reliable.
 
 Those shares are measured over 19,443 ticker-days (39 NSE symbols, 2 years each). The buckets matter: grouping 5–6 as "Strong bullish" and 0–1 as "Strong bearish" put a *Strong* verdict on **55.7% of all days**, which is not a verdict at all. One label per score puts it on 21.1%.
 
